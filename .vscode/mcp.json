@@ -11,6 +11,24 @@
 				"--extensionDevelopmentPath=${workspaceFolder}",
 			],
 			"cwd": "${workspaceFolder}/../vscode/test/mcp"
+		},
+		"fusion-gate": {
+			"type": "stdio",
+			"command": "/Users/ryyota/miniforge3/bin/python3",
+			"args": [
+				"/Users/ryyota/fusion-gate/integration/fusion_gate_mcp.py"
+			],
+			"env": {
+				"PYTHONUNBUFFERED": "1",
+				"PYTHONPATH": "/Users/ryyota/fusion-gate/gate:/Users/ryyota/fusion-gate/intelligence:/Users/ryyota/fusion-gate/integration",
+				"EMBEDDING2_MODE": "local_ai"
+			}
+		},
+		"fusion-orchestrator": {
+			"type": "stdio",
+			"command": "bash",
+			"args": ["start.sh"],
+			"cwd": "${workspaceFolder}/fusion-copilot/mcp-server"
 		}
 	},
 	"inputs": []
