@@ -1,5 +1,5 @@
 #!/bin/bash
-# fusion-orchestrator-mcp セットアップ & 起動スクリプト
+# fusion-orchestrator-v2 セットアップ & 起動スクリプト
 # MBA (MacBook Air) でも Mac Studio でも動く
 set -e
 
@@ -18,5 +18,5 @@ if [ ! -f "dist/index.js" ]; then
   npm run build
 fi
 
-echo "🚀 Starting Fusion Orchestrator MCP Server..."
+echo "🚀 Starting Fusion Orchestrator v2 MCP Server..."
 exec node dist/index.js

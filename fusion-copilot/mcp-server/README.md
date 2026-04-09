@@ -1,4 +1,4 @@
-# 🚀 Fusion Orchestrator MCP Server
+# 🚀 Fusion Orchestrator v2 MCP Server
 
 **Antigravity IDE × Jules × Gemini × n8n を統合する、独立型MCPサーバー**
 
@@ -30,6 +30,12 @@ npm run build
 npm start
 ```
 
+## 🧬 バージョン運用
+
+- この実装系統は **v2 スナップショット** として扱います。
+- 原本を上書きせず、次の試作は **v3** として並走させ、安定後に差分で統合します。
+- そのため、ディレクトリは互換性のため現状維持しつつ、サーバー名とパッケージ名は **v2** で明示します。
+
 ## 🔧 公開ツール一覧
 
 | ツール名 | 説明 | 必須引数 |
@@ -57,7 +63,7 @@ npm start
 ```jsonc
 {
   "servers": {
-    "fusion-orchestrator": {
+    "fusion-orchestrator-v2": {
       "type": "stdio",
       "command": "bash",
       "args": ["start.sh"],
@@ -74,7 +80,7 @@ npm start
 ```jsonc
 "mcp": {
   "servers": {
-    "fusion-orchestrator": {
+    "fusion-orchestrator-v2": {
       "type": "stdio",
       "command": "bash",
       "args": ["/Users/ryyota/Library/CloudStorage/GoogleDrive-tanakaryotadayo@gmail.com/マイドライブ/vscode-copilot-chat/fusion-copilot/mcp-server/start.sh"]

@@ -24,7 +24,7 @@
 				"EMBEDDING2_MODE": "local_ai"
 			}
 		},
-		"fusion-orchestrator": {
+		"fusion-orchestrator-v2": {
 			"type": "stdio",
 			"command": "bash",
 			"args": ["start.sh"],

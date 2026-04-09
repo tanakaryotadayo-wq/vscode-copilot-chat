@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Fusion Orchestrator MCP Server v2.0
+ * Fusion Orchestrator v2 MCP Server
  * ====================================
  * Full AI orchestration toolkit: Jules, Gemini CLI, Qwen Farm, Qwen Coder, n8n
  *
@@ -169,7 +169,7 @@ async function getHealthyFarmPort(): Promise<number | null> {
 // ── MCP Server ──────────────────────────────────────────────────────────────
 
 const server = new McpServer(
-  { name: 'fusion-orchestrator-mcp', version: '2.0.0' },
+  { name: 'fusion-orchestrator-v2', version: '2.0.0' },
 );
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -536,7 +536,7 @@ server.tool(
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('🚀 Fusion Orchestrator MCP Server v2.0 running on stdio');
+  console.error('🚀 Fusion Orchestrator v2 MCP Server running on stdio');
   console.error(`   Farm ports: ${QWEN_FARM_PORTS.join(', ')} | Coder port: ${QWEN_CODER_PORT}`);
 }
 
