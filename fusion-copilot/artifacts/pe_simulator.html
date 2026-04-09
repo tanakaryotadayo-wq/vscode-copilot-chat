@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>⚖️ Perfect Equilibrium Simulator v2 — Fusion Gate</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { background-color: #0d1117; color: #c9d1d9; font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace; }
+        .cli-container { background-color: #010409; border: 1px solid #30363d; border-radius: 6px; padding: 16px; height: 300px; overflow-y: auto; font-size: 0.85rem; }
+        .cli-line { margin: 2px 0; }
+        .cli-prompt::before { content: "$ "; color: #3fb950; }
+        .cli-info { color: #58a6ff; }
+        .cli-warn { color: #d29922; }
+        .cli-error { color: #f85149; }
+        .cli-success { color: #3fb950; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #010409; }
+        ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #484f58; }
+        .header { display: flex; align-items: center; gap: 12px; padding: 16px 0; border-bottom: 1px solid #30363d; margin-bottom: 16px; }
+        .header h1 { font-size: 22px; font-weight: 700; }
+        .badge { background: #238636; color: white; padding: 3px 10px; border-radius: 12px; font-size: 11px; }
+        .status-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; }
+        .status-card { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 8px 12px; text-align: center; }
+        .status-card .val { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+        .status-card .lbl { font-size: 10px; color: #8b949e; margin-top: 2px; }
+        .green .val { color: #3fb950; }
+        .blue .val { color: #58a6ff; }
+        .red .val { color: #f85149; }
+        .yellow .val { color: #d29922; }
+    </style>
+</head>
+<body class="p-6">
+    <div class="max-w-6xl mx-auto">
+        <div class="header">
+            <h1>⚖️ Perfect Equilibrium Simulator</h1>
+            <span class="badge">v2.0 — Fusion Gate</span>
+        </div>
+
+        <div class="status-bar" id="status-bar">
+            <div class="status-card blue"><div class="val" id="val-phall">0.0000</div><div class="lbl">P_hall</div></div>
+            <div class="status-card red"><div class="val" id="val-plimit">—</div><div class="lbl">P_limit</div></div>
+            <div class="status-card green"><div class="val" id="val-status">IDLE</div><div class="lbl">Status</div></div>
+            <div class="status-card yellow"><div class="val" id="val-collapse">—</div><div class="lbl">Collapse Step</div></div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div class="lg:col-span-1 bg-[#161b22] p-6 rounded-lg border border-[#30363d]">
+                <h2 class="text-lg font-bold mb-4 border-b border-[#30363d] pb-2">Parameters</h2>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm mb-1 text-gray-400">Model Preset</label>
+                        <select id="preset" class="w-full bg-[#0d1117] border border-[#30363d] rounded p-2 text-white">
+                            <option value="claude_opus">Claude Opus (e=0.02, C_ψ=0.80)</option>
+                            <option value="claude_sonnet">Claude Sonnet (e=0.04, C_ψ=0.75)</option>
+                            <option value="gemini_pro">Gemini Pro (e=0.12, C_ψ=0.65)</option>
+                            <option value="gemini_flash">Gemini Flash (e=0.18, C_ψ=0.55)</option>
+                            <option value="qwen3_coder">Qwen3 Coder (e=0.06, C_ψ=0.70)</option>
+                            <option value="qwen35_9b">Qwen3.5 9B (e=0.10, C_ψ=0.60)</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm mb-1 text-gray-400">Error Rate (e)</label>
+                        <input type="number" id="input-e" value="0.05" step="0.01" min="0" max="1" class="w-full bg-[#0d1117] border border-[#30363d] rounded p-2 text-white">
+                    </div>
+                    <div>
+                        <label class="block text-sm mb-1 text-gray-400">Correction Power (C_ψ)</label>
+                        <input type="number" id="input-c-psi" value="0.8" step="0.05" min="0" max="1" class="w-full bg-[#0d1117] border border-[#30363d] rounded p-2 text-white">
+                    </div>
+                    <div>
+                        <label class="block text-sm mb-1 text-gray-400">Steps</label>
+                        <input type="number" id="input-steps" value="50" step="10" min="10" max="500" class="w-full bg-[#0d1117] border border-[#30363d] rounded p-2 text-white">
+                    </div>
+                    <div>
+                        <label class="block text-sm mb-1 text-gray-400">Monte Carlo Agents</label>
+                        <input type="number" id="input-agents" value="2000" step="500" min="100" max="10000" class="w-full bg-[#0d1117] border border-[#30363d] rounded p-2 text-white">
+                    </div>
+                    <div class="flex items-center mt-2">
+                        <input type="checkbox" id="toggle-e-decay" class="mr-2">
+                        <label for="toggle-e-decay" class="text-sm text-gray-400">Context decay: e(t) = e₀ + 0.002t</label>
+                    </div>
+                    <button id="btn-run" class="w-full mt-4 bg-[#238636] hover:bg-[#2ea043] text-white font-bold py-2 px-4 rounded border border-[rgba(240,246,252,0.1)] transition-colors">
+                        ▶ Run Simulation
+                    </button>
+                    <button id="btn-compare" class="w-full bg-[#21262d] hover:bg-[#30363d] text-[#c9d1d9] font-bold py-2 px-4 rounded border border-[rgba(240,246,252,0.1)] transition-colors">
+                        📊 Compare All Models
+                    </button>
+                </div>
+            </div>
+
+            <div class="lg:col-span-2 flex flex-col gap-6">
+                <div class="bg-[#161b22] p-6 rounded-lg border border-[#30363d] h-[400px] flex items-center justify-center">
+                    <canvas id="simulationChart"></canvas>
+                </div>
+                <div class="cli-container" id="cli-output">
+                    <div class="cli-line cli-info">System initialized. Ready for simulation.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const PRESETS = {
+            claude_opus:   { e: 0.02, c: 0.80 },
+            claude_sonnet: { e: 0.04, c: 0.75 },
+            gemini_pro:    { e: 0.12, c: 0.65 },
+            gemini_flash:  { e: 0.18, c: 0.55 },
+            qwen3_coder:   { e: 0.06, c: 0.70 },
+            qwen35_9b:     { e: 0.10, c: 0.60 },
+        };
+
+        let chartInstance = null;
+
+        document.getElementById('preset').addEventListener('change', (ev) => {
+            const p = PRESETS[ev.target.value];
+            if (p) {
+                document.getElementById('input-e').value = p.e;
+                document.getElementById('input-c-psi').value = p.c;
+            }
+        });
+
+        function logCLI(message, type = '') {
+            const container = document.getElementById('cli-output');
+            const line = document.createElement('div');
+            line.className = `cli-line ${type}`;
+            line.textContent = message;
+            container.appendChild(line);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function calculateLimit(e, c_psi) {
+            if (c_psi >= 1) return 0;
+            if (e === 0) return 0;
+            return ((1 - c_psi) * e) / (1 - (1 - c_psi) * (1 - e));
+        }
+
+        function runSimulation() {
+            const e0 = parseFloat(document.getElementById('input-e').value);
+            const c_psi = parseFloat(document.getElementById('input-c-psi').value);
+            const steps = parseInt(document.getElementById('input-steps').value, 10);
+            const numAgents = parseInt(document.getElementById('input-agents').value, 10);
+            const useDecay = document.getElementById('toggle-e-decay').checked;
+
+            document.getElementById('cli-output').innerHTML = '';
+            logCLI(`> run_simulation(e=${e0}, C_ψ=${c_psi}, steps=${steps}, agents=${numAgents}, decay=${useDecay})`, 'cli-prompt');
+
+            const theoreticalProb = [0];
+            const mcProb = [0];
+            let currentTheoryP = 0.0;
+            const limitE0 = calculateLimit(e0, c_psi);
+            let isTheoryStable = false;
+            let agents = new Uint8Array(numAgents);
+
+            for (let t = 1; t <= steps; t++) {
+                const currentE = useDecay ? e0 + 0.002 * t : e0;
+
+                currentTheoryP = (1 - c_psi) * (currentTheoryP + (1 - currentTheoryP) * currentE);
+                theoreticalProb.push(currentTheoryP);
+
+                let hallucinationCount = 0;
+                for (let i = 0; i < numAgents; i++) {
+                    let state = agents[i];
+                    if (state === 0 && Math.random() < currentE) state = 1;
+                    if (state === 1 && Math.random() < c_psi) state = 0;
+                    agents[i] = state;
+                    hallucinationCount += state;
+                }
+                mcProb.push(hallucinationCount / numAgents);
+
+                if (t % Math.max(1, Math.floor(steps / 10)) === 0 || t === steps) {
+                    const currentLimit = useDecay ? calculateLimit(currentE, c_psi) : limitE0;
+                    let status = "EVOLVING";
+                    let statusClass = "cli-warn";
+                    if (!useDecay) {
+                        if (Math.abs(currentLimit - currentTheoryP) < 0.0001 || currentTheoryP >= currentLimit * 0.95) {
+                            status = "STABLE"; statusClass = "cli-success"; isTheoryStable = true;
+                        }
+                    } else {
+                        if (currentLimit >= 1.0) { status = "COLLAPSED"; statusClass = "cli-error"; }
+                        else if (Math.abs(currentLimit - currentTheoryP) < 0.001) { status = "TRACKING_LIMIT"; statusClass = "cli-info"; }
+                    }
+                    logCLI(`[Step ${t.toString().padStart(3, ' ')}] P_theory: ${currentTheoryP.toFixed(4)} | P_mc: ${mcProb[t].toFixed(4)} | Limit: ${currentLimit.toFixed(4)} | ${status}`, statusClass);
+                }
+            }
+
+            // Update status bar
+            const finalE = useDecay ? e0 + 0.002 * steps : e0;
+            const finalLimit = calculateLimit(finalE, c_psi);
+            document.getElementById('val-phall').textContent = currentTheoryP.toFixed(4);
+            document.getElementById('val-plimit').textContent = finalLimit.toFixed(4);
+            const fStatus = finalLimit >= 1 ? 'COLLAPSED' : Math.abs(finalLimit - currentTheoryP) < 0.001 ? 'STABLE' : 'EVOLVING';
+            document.getElementById('val-status').textContent = fStatus;
+
+            if (useDecay) {
+                const collapseStep = Math.floor((c_psi - e0) / 0.002);
+                document.getElementById('val-collapse').textContent = collapseStep > 0 ? `~${collapseStep}` : '∞';
+            } else {
+                document.getElementById('val-collapse').textContent = '∞';
+            }
+
+            if (!useDecay && isTheoryStable) {
+                logCLI(`✅ Converged to theoretical limit P_limit = ${limitE0.toFixed(4)}`, 'cli-success');
+            }
+
+            renderChart(Array.from({length: steps + 1}, (_, i) => i), theoreticalProb, mcProb, useDecay, limitE0);
+        }
+
+        function compareModels() {
+            document.getElementById('cli-output').innerHTML = '';
+            logCLI('> compare_all_models(steps=100)', 'cli-prompt');
+            logCLI('', '');
+            const steps = 100;
+            for (const [name, p] of Object.entries(PRESETS)) {
+                let pT = 0;
+                for (let t = 1; t <= steps; t++) {
+                    pT = (1 - p.c) * (pT + (1 - pT) * p.e);
+                }
+                const lim = calculateLimit(p.e, p.c);
+                const cls = lim < 0.03 ? 'cli-success' : lim < 0.06 ? 'cli-warn' : 'cli-error';
+                logCLI(`${name.padEnd(16)} e=${p.e.toFixed(2)}  C_ψ=${p.c.toFixed(2)}  →  P_limit = ${lim.toFixed(4)} (${(lim * 100).toFixed(1)}%)`, cls);
+            }
+            logCLI('', '');
+            logCLI('Lower P_limit = safer model under Vector Proxy supervision', 'cli-info');
+        }
+
+        function renderChart(labels, theoryData, mcData, useDecay, limitE0) {
+            const ctx = document.getElementById('simulationChart').getContext('2d');
+            if (chartInstance) chartInstance.destroy();
+            const datasets = [
+                { label: '理論値 (Theoretical P_hall)', data: theoryData, borderColor: '#58a6ff', backgroundColor: 'transparent', borderWidth: 2, tension: 0.1, pointRadius: 0 },
+                { label: 'モンテカルロ結果 (MC Average)', data: mcData, borderColor: '#3fb950', backgroundColor: 'transparent', borderWidth: 1, borderDash: [5, 5], tension: 0.1, pointRadius: 1 }
+            ];
+            if (!useDecay) {
+                datasets.push({ label: `極限値 (Limit: ${limitE0.toFixed(4)})`, data: Array(labels.length).fill(limitE0), borderColor: '#f85149', borderWidth: 1, borderDash: [2, 2], pointRadius: 0 });
+            }
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: { labels, datasets },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    animation: { duration: 400 },
+                    scales: {
+                        y: { beginAtZero: true, max: useDecay ? 1.0 : Math.min(1.0, Math.max(...theoryData) * 2), grid: { color: '#21262d' }, ticks: { color: '#8b949e' }, title: { display: true, text: 'Hallucination Probability (P_hall)', color: '#8b949e' } },
+                        x: { grid: { color: '#21262d' }, ticks: { color: '#8b949e', maxTicksLimit: 10 }, title: { display: true, text: 'Reasoning Steps (n)', color: '#8b949e' } }
+                    },
+                    plugins: { legend: { labels: { color: '#c9d1d9' } } }
+                }
+            });
+        }
+
+        document.getElementById('btn-run').addEventListener('click', runSimulation);
+        document.getElementById('btn-compare').addEventListener('click', compareModels);
+        window.onload = runSimulation;
+    </script>
+</body>
+</html>

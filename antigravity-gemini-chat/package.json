@@ -1,0 +1,114 @@
+{
+  "name": "antigravity-gemini-chat",
+  "displayName": "Antigravity Gemini Chat",
+  "description": "Gemini-powered AI chat for Antigravity IDE — fusing Copilot Chat architecture with Google AI",
+  "version": "0.1.0",
+  "publisher": "tanakaryota",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.93.0"
+  },
+  "categories": [
+    "AI",
+    "Chat"
+  ],
+  "keywords": [
+    "gemini",
+    "ai",
+    "chat",
+    "antigravity"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "chatParticipants": [
+      {
+        "id": "antigravity.gemini",
+        "name": "gemini",
+        "fullName": "Gemini",
+        "description": "Google Gemini AI — chat, code, reason",
+        "isDefault": false,
+        "commands": [
+          {
+            "name": "configure",
+            "description": "Configure Gemini API key"
+          },
+          {
+            "name": "models",
+            "description": "List available Gemini models"
+          },
+          {
+            "name": "think",
+            "description": "Use thinking/reasoning mode"
+          }
+        ]
+      }
+    ],
+    "commands": [
+      {
+        "command": "antigravity.gemini.configure",
+        "title": "Gemini: Configure API Key",
+        "category": "Antigravity"
+      },
+      {
+        "command": "antigravity.gemini.selectModel",
+        "title": "Gemini: Select Model",
+        "category": "Antigravity"
+      }
+    ],
+    "configuration": {
+      "title": "Antigravity Gemini Chat",
+      "properties": {
+        "antigravity.gemini.model": {
+          "type": "string",
+          "default": "gemini-2.5-pro",
+          "description": "Default Gemini model to use",
+          "enum": [
+            "gemini-2.5-pro",
+            "gemini-2.5-flash",
+            "gemini-2.0-flash",
+            "gemini-2.0-flash-lite"
+          ],
+          "enumDescriptions": [
+            "Gemini 2.5 Pro — Most capable, thinking model",
+            "Gemini 2.5 Flash — Fast with thinking",
+            "Gemini 2.0 Flash — Fast and efficient",
+            "Gemini 2.0 Flash Lite — Lightweight"
+          ]
+        },
+        "antigravity.gemini.enableThinking": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable thinking/reasoning mode for supported models"
+        },
+        "antigravity.gemini.maxOutputTokens": {
+          "type": "number",
+          "default": 65536,
+          "description": "Maximum output tokens for Gemini responses"
+        },
+        "antigravity.gemini.enableToolCalling": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable tool calling (file operations, terminal, etc.)"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "lint": "eslint src --ext ts"
+  },
+  "dependencies": {
+    "@google/genai": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.93.0",
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.7.0"
+  }
+}
