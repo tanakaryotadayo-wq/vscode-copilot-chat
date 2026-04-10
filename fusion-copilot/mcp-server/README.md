@@ -41,7 +41,7 @@ npm start
 | ツール名 | 説明 | 必須引数 |
 |:---------|:-----|:---------|
 | `qwen_chat` | Qwen 3.5-9B ファームへラウンドロビンでチャット | `message` |
-| `qwen_code` | Qwen3 Coder 80B にコーディング依頼 | `task` |
+| `qwen_code` | Qwen3 Coder Next プールにコーディング依頼 | `task` |
 | `qwen_batch` | Qwen ファームへ複数プロンプトを並列投入 | `prompts` |
 | `jules_new` | Julesにタスクを送信 | `task` |
 | `jules_list` | 稼働中のJulesセッションを一覧 | — |
@@ -53,7 +53,7 @@ npm start
 | `gemini_deepthink` | Gemini CLIで深い設計思考を実行 | `prompt` |
 | `gemini_deepsearch` | Gemini CLIで技術調査を実行 | `query` |
 | `n8n_trigger` | n8n Webhookを叩いてJules監査ループを発動 | `repo`, `task` |
-| `qwen_health` | Qwen 3.5 ファーム（8010-8014）の死活チェック | — |
+| `qwen_health` | Qwen 3.5 ファーム + Qwen3 Coder Next プールの死活チェック | — |
 | `orchestrate` | GitHub Issue分析 → タスク分解 → Jules並列投入の全自動パイプライン | — |
 
 ## 🔌 Antigravity IDE への登録
@@ -95,6 +95,8 @@ npm start
 |:-------|:-----------|:-----|
 | `N8N_WEBHOOK_URL` | `http://localhost:5678/webhook/jules-start` | n8n Webhook URL |
 | `QWEN_PORTS` | `8010,8011,8012,8013,8014` | Qwenファームのポート（カンマ区切り） |
+| `QWEN_CODER_PORTS` | `8020,8880,8881,8882` | Qwen3 Coder / Qwen3 Coder Next プールのポート |
+| `QWEN_CODER_MODEL` | `Qwen3-Coder-Next-abliterated-mlx-8Bit` | coder系バックエンドへ渡すモデル名 |
 | `QWEN_HOST` | `localhost` | Qwenファームのホスト |
 
 ## 🏗️ 技術スタック

@@ -1,0 +1,201 @@
+{
+  "name": "fusion-copilot",
+  "displayName": "Fusion Copilot",
+  "description": "Local AI × Cloud AI × fusion-gate — unified AI coding assistant for Antigravity IDE",
+  "version": "0.1.0",
+  "publisher": "tanakaryota",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.93.0"
+  },
+  "categories": [
+    "AI",
+    "Chat",
+    "Programming Languages"
+  ],
+  "keywords": [
+    "ai",
+    "copilot",
+    "local-ai",
+    "qwen",
+    "gemini",
+    "fusion-gate",
+    "antigravity"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "chatParticipants": [
+      {
+        "id": "fusion.copilot",
+        "name": "fusion",
+        "fullName": "Fusion Copilot",
+        "description": "Local AI + Cloud AI + fusion-gate unified agent",
+        "isDefault": false,
+        "commands": [
+          {
+            "name": "quick",
+            "description": "Qwen 3.5 — 超高速回答（ローカル）"
+          },
+          {
+            "name": "code",
+            "description": "Qwen3 Coder 80B — 本格コーディング（ローカル）"
+          },
+          {
+            "name": "think",
+            "description": "Gemini 2.5 Pro — 深い推論（クラウド）"
+          },
+          {
+            "name": "memory",
+            "description": "過去の会話をセマンティック検索"
+          },
+          {
+            "name": "status",
+            "description": "全モデル＋エージェントの稼働状態を表示"
+          },
+          {
+            "name": "jules",
+            "description": "Julesにタスクを非同期で投げる（GitHub連動）"
+          },
+          {
+            "name": "deepthink",
+            "description": "Gemini CLI DEEPTHINK — 重い設計問題を深く思考"
+          },
+          {
+            "name": "deepsearch",
+            "description": "Gemini CLI DEEPSEARCH — 技術調査を徹底検索"
+          },
+          {
+            "name": "orchestrate",
+            "description": "Issue分析→タスク分解→Jules並列投入を一発実行"
+          }
+        ]
+      }
+    ],
+    "commands": [
+      {
+        "command": "fusion.copilot.selectModel",
+        "title": "Fusion: Select AI Model",
+        "category": "Fusion Copilot"
+      },
+      {
+        "command": "fusion.copilot.toggleInline",
+        "title": "Fusion: Toggle Inline Completions",
+        "category": "Fusion Copilot"
+      },
+      {
+        "command": "fusion.copilot.configureGemini",
+        "title": "Fusion: Configure Gemini API Key",
+        "category": "Fusion Copilot"
+      },
+      {
+        "command": "fusion.copilot.launchFarm",
+        "title": "Fusion: Launch Local AI Farm",
+        "category": "Fusion Copilot"
+      },
+      {
+        "command": "fusion.copilot.orchestrate",
+        "title": "Fusion: Orchestrate (Issue→Jules Pipeline)",
+        "category": "Fusion Copilot"
+      },
+      {
+        "command": "fusion.copilot.nightMode",
+        "title": "Fusion: Night Mode (Sleep & Let AI Code)",
+        "category": "Fusion Copilot"
+      },
+      {
+        "command": "fusion.copilot.peSimulator",
+        "title": "Fusion: ⚖️ Perfect Equilibrium Simulator",
+        "category": "Fusion Copilot"
+      }
+    ],
+    "configuration": {
+      "title": "Fusion Copilot",
+      "properties": {
+        "fusion.copilot.localAi.baseUrl": {
+          "type": "string",
+          "default": "http://localhost:8010",
+          "description": "Base URL for the primary Qwen 3.5 local AI server"
+        },
+        "fusion.copilot.localAi.farmPorts": {
+          "type": "array",
+          "default": [
+            8010,
+            8011,
+            8012,
+            8013,
+            8014
+          ],
+          "description": "Ports for the Qwen 3.5 KV-cached farm instances"
+        },
+        "fusion.copilot.coderAi.baseUrl": {
+          "type": "string",
+          "default": "http://localhost:8020",
+          "description": "Base URL for the Qwen3 Coder 80B MoE server"
+        },
+        "fusion.copilot.gemini.model": {
+          "type": "string",
+          "default": "gemini-3.1-pro",
+          "description": "Default Gemini model",
+          "enum": [
+            "gemini-3.1-pro",
+            "gemini-2.5-flash",
+            "gemini-2.0-flash"
+          ]
+        },
+        "fusion.copilot.inline.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable inline completions via local Qwen 3.5"
+        },
+        "fusion.copilot.n8n.useMcp": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, delegate Jules Orchestration to the fusion-n8n-mcp server instead of direct REST API"
+        },
+        "fusion.copilot.inline.debounceMs": {
+          "type": "number",
+          "default": 150,
+          "description": "Debounce delay in ms before triggering inline completion"
+        },
+        "fusion.copilot.inline.timeoutMs": {
+          "type": "number",
+          "default": 2000,
+          "description": "Maximum wait time in ms for inline completion response"
+        },
+        "fusion.copilot.router.autoRoute": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically route tasks to the best model"
+        },
+        "fusion.copilot.fusionGate.mcpEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable fusion-gate MCP tool integration"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "lint": "eslint src --ext ts"
+  },
+  "dependencies": {
+    "@google/genai": "^1.0.0"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@types/chai": "^5.2.3",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.93.0",
+    "chai": "^6.2.2",
+    "esbuild": "^0.25.0",
+    "mocha": "^11.7.5",
+    "typescript": "^5.7.0"
+  }
+}

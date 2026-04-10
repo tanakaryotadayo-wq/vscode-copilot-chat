@@ -17,6 +17,7 @@ import { EditStrategy, trimLeadingWhitespace } from '../../../prompt/node/editGe
 import { EarlyStopping, IResponseProcessorContext, LeadingMarkdownStreaming, ReplyInterpreter, StreamingEditsController } from '../../../prompt/node/intents';
 import { ILineFilter, IStreamingEditsStrategyFactory, IStreamingTextPieceClassifier, InsertOrReplaceStreamingEdits, InsertionStreamingEdits, LineRange, ReplaceSelectionStreamingEdits, SentInCodeBlock, SentLine, StreamingWorkingCopyDocument } from '../../../prompt/node/streamingEdits';
 import { ProjectedDocument } from './summarizedDocument/summarizeDocument';
+import { astNavTreeCostFn } from './summarizedDocument/astCompressionCostFn';
 import { adjustSelectionAndSummarizeDocument } from './summarizedDocument/summarizeDocumentHelpers';
 import { DocumentSnapshot, WorkingCopyDerivedDocument } from './workingCopies';
 
@@ -27,7 +28,9 @@ export async function createPromptingSummarizedDocument(
 	userSelection: Range,
 	tokensBudget: number,
 ): Promise<PromptingSummarizedDocument> {
-	const result = await adjustSelectionAndSummarizeDocument(parserService, document, formattingOptions, userSelection, tokensBudget);
+	const result = await adjustSelectionAndSummarizeDocument(parserService, document, formattingOptions, userSelection, tokensBudget, {
+		costFnOverride: astNavTreeCostFn,
+	});
 	return new PromptingSummarizedDocument(
 		result.selection,
 		result.adjustedSelection,

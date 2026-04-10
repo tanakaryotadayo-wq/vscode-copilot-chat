@@ -1,0 +1,2404 @@
+# ============================================================
+# Fusion Copilot — DEEPTHINK Context Pack
+# 全ソースコード + 設定ファイルの統合ダンプ
+# このファイル1つをDEEPTHINKに投げれば全体像を把握可能
+# ============================================================
+#
+# プロジェクト概要:
+#   Antigravity IDE用のAIオーケストレーション拡張機能。
+#   ローカルAI (Qwen 3.5 9B x5 Farm, Qwen3 Coder 80B) と
+#   クラウドAI (Gemini 3.1 Pro) を統合し、
+#   さらにJules CLI, Gemini CLI (DEEPTHINK/DEEPSEARCH) を
+#   チャットパネルから直接操作可能にするAgent Manager。
+#
+# 機能一覧:
+#   - Ghost-Text: FIM (Fill-in-the-Middle) インライン補完
+#   - 裏タブカンニング: 他のタブのコードを自動でコンテキスト注入
+#   - Task Router: プロンプト複雑度に応じた自動モデル選択
+#   - Agent Orchestrator: Jules + Gemini CLI統合パイプライン
+#   - Night Mode: 寝ている間にJulesにissueを処理させる自動化
+#
+# バンドル検証: 10/10 全機能パス済み
+# ============================================================
+
+
+# ================================================================
+# FILE: package.json
+# ================================================================
+{
+  "name": "fusion-copilot",
+  "displayName": "Fusion Copilot",
+  "description": "Local AI × Cloud AI × fusion-gate — unified AI coding assistant for Antigravity IDE",
+  "version": "0.1.0",
+  "publisher": "tanakaryota",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.93.0"
+  },
+  "categories": [
+    "AI",
+    "Chat",
+    "Programming Languages"
+  ],
+  "keywords": [
+    "ai",
+    "copilot",
+    "local-ai",
+    "qwen",
+    "gemini",
+    "fusion-gate",
+    "antigravity"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "chatParticipants": [
+      {
+        "id": "fusion.copilot",
+        "name": "fusion",
+        "fullName": "Fusion Copilot",
+        "description": "Local AI + Cloud AI + fusion-gate unified agent",
+        "isDefault": false,
+        "commands": [
+          {
+            "name": "quick",
+            "description": "Qwen 3.5 — 超高速回答（ローカル）"
+          },
+          {
+            "name": "code",
+            "description": "Qwen3 Coder 80B — 本格コーディング（ローカル）"
+          },
+          {
+            "name": "think",
+            "description": "Gemini 2.5 Pro — 深い推論（クラウド）"
+          },
+          {
+            "name": "memory",
+            "description": "過去の会話をセマンティック検索"
+          },
+          {
+            "name": "status",
+            "description": "全モデル＋エージェントの稼働状態を表示"
+          },
+          {
+            "name": "jules",
+            "description": "Julesにタスクを非同期で投げる（GitHub連動）"
+          },
+          {
+            "name": "deepthink",
+            "description": "Gemini CLI DEEPTHINK — 重い設計問題を深く思考"
+          },
+          {
+            "name": "deepsearch",
+            "description": "Gemini CLI DEEPSEARCH — 技術調査を徹底検索"
+          },
+          {
+            "name": "orchestrate",
+            "description": "Issue分析→タスク分解→Jules並列投入を一発実行"
+          }
+        ]
+      }
+    ],
+    "commands": [
+      {
+        "command": "fusion.copilot.selectModel",
+        "title": "Fusion: Select AI Model",
+        "category": "Fusion Copilot"
+      },
+      {
+        "command": "fusion.copilot.toggleInline",
+        "title": "Fusion: Toggle Inline Completions",
+        "category": "Fusion Copilot"
+      },
+      {
+        "command": "fusion.copilot.configureGemini",
+        "title": "Fusion: Configure Gemini API Key",
+        "category": "Fusion Copilot"
+      },
+      {
+        "command": "fusion.copilot.launchFarm",
+        "title": "Fusion: Launch Local AI Farm",
+        "category": "Fusion Copilot"
+      },
+      {
+        "command": "fusion.copilot.orchestrate",
+        "title": "Fusion: Orchestrate (Issue→Jules Pipeline)",
+        "category": "Fusion Copilot"
+      },
+      {
+        "command": "fusion.copilot.nightMode",
+        "title": "Fusion: Night Mode (Sleep & Let AI Code)",
+        "category": "Fusion Copilot"
+      }
+    ],
+    "configuration": {
+      "title": "Fusion Copilot",
+      "properties": {
+        "fusion.copilot.localAi.baseUrl": {
+          "type": "string",
+          "default": "http://localhost:8010",
+          "description": "Base URL for the primary Qwen 3.5 local AI server"
+        },
+        "fusion.copilot.localAi.farmPorts": {
+          "type": "array",
+          "default": [
+            8010,
+            8011,
+            8012,
+            8013,
+            8014
+          ],
+          "description": "Ports for the Qwen 3.5 KV-cached farm instances"
+        },
+        "fusion.copilot.coderAi.baseUrl": {
+          "type": "string",
+          "default": "http://localhost:8020",
+          "description": "Base URL for the Qwen3 Coder 80B MoE server"
+        },
+        "fusion.copilot.gemini.model": {
+          "type": "string",
+          "default": "gemini-3.1-pro",
+          "description": "Default Gemini model",
+          "enum": [
+            "gemini-3.1-pro",
+            "gemini-2.5-flash",
+            "gemini-2.0-flash"
+          ]
+        },
+        "fusion.copilot.inline.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable inline completions via local Qwen 3.5"
+        },
+        "fusion.copilot.inline.debounceMs": {
+          "type": "number",
+          "default": 150,
+          "description": "Debounce delay in ms before triggering inline completion"
+        },
+        "fusion.copilot.inline.timeoutMs": {
+          "type": "number",
+          "default": 2000,
+          "description": "Maximum wait time in ms for inline completion response"
+        },
+        "fusion.copilot.router.autoRoute": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically route tasks to the best model"
+        },
+        "fusion.copilot.fusionGate.mcpEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable fusion-gate MCP tool integration"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "lint": "eslint src --ext ts"
+  },
+  "dependencies": {
+    "@google/genai": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/chai": "^5.2.3",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.93.0",
+    "chai": "^6.2.2",
+    "esbuild": "^0.25.0",
+    "mocha": "^11.7.5",
+    "typescript": "^5.7.0"
+  }
+}
+
+
+# ================================================================
+# FILE: tsconfig.json
+# ================================================================
+{
+  "compilerOptions": {
+    "module": "ESNext",
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "moduleResolution": "bundler",
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "sourceMap": true,
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "declarationMap": true
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}
+
+
+# ================================================================
+# FILE: esbuild.mjs
+# ================================================================
+import * as esbuild from 'esbuild';
+
+const watch = process.argv.includes('--watch');
+
+/** @type {esbuild.BuildOptions} */
+const buildOptions = {
+	entryPoints: ['src/extension.ts'],
+	bundle: true,
+	outfile: 'dist/extension.js',
+	external: ['vscode'],
+	format: 'cjs',
+	platform: 'node',
+	target: 'node20',
+	sourcemap: true,
+	minify: !watch,
+	treeShaking: true,
+};
+
+if (watch) {
+	const ctx = await esbuild.context(buildOptions);
+	await ctx.watch();
+	console.log('[fusion-copilot] Watching for changes...');
+} else {
+	await esbuild.build(buildOptions);
+	console.log('[fusion-copilot] Build complete');
+}
+
+
+# ================================================================
+# FILE: src/extension.ts
+# ================================================================
+/*---------------------------------------------------------------------------------------------
+ *  Fusion Copilot — Extension Entry Point
+ *  Registers Chat Participant, Inline Completion Provider, Status Bar, and commands.
+ *  Orchestrates Local AI (Qwen Farm + Coder) and Cloud AI (Gemini) through Task Router.
+ *--------------------------------------------------------------------------------------------*/import * as vscode from 'vscode';
+import { QwenFarm } from './providers/qwenFarm.js';
+import { LocalAiClient } from './providers/localAiClient.js';
+import { GeminiClient } from './providers/geminiClient.js';
+import { McpBridge } from './tools/mcpBridge.js';
+import { routeTask, formatDecision, type TaskInput } from './router/taskRouter.js';
+import { FusionStatusBar } from './ui/statusBar.js';
+import { Orchestrator } from './orchestrator/agentOrchestrator.js';
+import { createInlineHandler } from './inline/ghostTextProvider.js';
+
+const EXTENSION_ID = 'fusion.copilot';
+const OUTPUT_CHANNEL_NAME = 'Fusion Copilot';
+
+let outputChannel: vscode.OutputChannel;
+let statusBar: FusionStatusBar;
+let qwenFarm: QwenFarm;
+let coderClient: LocalAiClient;
+let geminiClient: GeminiClient;
+let mcpBridge: McpBridge;
+let orchestrator: Orchestrator;
+let healthCheckInterval: ReturnType<typeof setInterval> | undefined;
+
+// ── Logging ─────────────────────────────────────────────────────────────────
+
+function log(message: string): void {
+	const ts = new Date().toISOString().slice(11, 23);
+	outputChannel?.appendLine(`[${ts}] ${message}`);
+}
+
+// ── System Prompt ───────────────────────────────────────────────────────────
+
+function getSystemPrompt(): string {
+	const workspaceFolders = vscode.workspace.workspaceFolders?.map(f => f.uri.fsPath).join(', ') ?? 'none';
+	const activeFile = vscode.window.activeTextEditor?.document.uri.fsPath ?? 'none';
+
+	return `You are Fusion Copilot — an expert AI coding assistant running in Antigravity IDE (Mac Studio M3 Ultra).
+You have access to the full codebase and can use fusion-gate tools to read files, search, and run commands.
+
+## Current Context
+- Workspace: ${workspaceFolders}
+- Active file: ${activeFile}
+- Time: ${new Date().toISOString()}
+
+## Guidelines
+- Be concise but thorough. Use markdown formatting.
+- When modifying code, show diffs or complete replacement snippets.
+- Respond in the same language the user writes in (日本語 or English).
+- If you need information, use tools (search, read_file, run_command).
+`;
+}
+
+// ── Activation ──────────────────────────────────────────────────────────────
+
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
+	outputChannel = vscode.window.createOutputChannel(OUTPUT_CHANNEL_NAME);
+	log('Fusion Copilot activating...');
+
+	// Read configuration
+	const config = vscode.workspace.getConfiguration('fusion.copilot');
+	const farmPorts = config.get<number[]>('localAi.farmPorts', [8010, 8011, 8012, 8013, 8014]);
+	const coderUrl = config.get<string>('coderAi.baseUrl', 'http://localhost:8020');
+
+	// Initialize providers
+	qwenFarm = new QwenFarm('localhost', farmPorts, 'qwen3.5-9b');
+	coderClient = new LocalAiClient(coderUrl, 'qwen3-coder-80b');
+	
+	const geminiKey = await context.secrets.get('fusion.copilot.geminiKey');
+	geminiClient = new GeminiClient(geminiKey ?? '');
+
+	mcpBridge = new McpBridge();
+	context.subscriptions.push({ dispose: () => mcpBridge.stop() });
+
+	orchestrator = new Orchestrator();
+
+	// Status bar
+	statusBar = new FusionStatusBar();
+	context.subscriptions.push({ dispose: () => statusBar.dispose() });
+
+	// Register Chat Participant
+	try {
+		const participant = vscode.chat.createChatParticipant(EXTENSION_ID, handleChatRequest);
+		participant.iconPath = new vscode.ThemeIcon('flame');
+		context.subscriptions.push(participant);
+		log('Chat participant registered');
+	} catch (err) {
+		log(`Chat participant registration failed: ${err}`);
+	}
+
+	// Register Inline Completion Provider (Project Ghost-Text: FIM + cross-file context)
+	const inlineEnabled = config.get<boolean>('inline.enabled', true);
+	if (inlineEnabled) {
+		const ghostTextHandler = createInlineHandler(qwenFarm);
+		const provider = vscode.languages.registerInlineCompletionItemProvider(
+			{ pattern: '**' },
+			{ provideInlineCompletionItems: ghostTextHandler },
+		);
+		context.subscriptions.push(provider);
+		log('Ghost-Text inline completion provider registered (FIM mode)');
+	}
+
+	// Register commands
+	context.subscriptions.push(
+		vscode.commands.registerCommand('fusion.copilot.selectModel', selectModel),
+		vscode.commands.registerCommand('fusion.copilot.toggleInline', toggleInline),
+		vscode.commands.registerCommand('fusion.copilot.configureGemini', () => configureGeminiKey(context)),
+		vscode.commands.registerCommand('fusion.copilot.launchFarm', launchFarm),
+		vscode.commands.registerCommand('fusion.copilot.orchestrate', orchestrateFromPalette),
+		vscode.commands.registerCommand('fusion.copilot.nightMode', nightModeFromPalette),
+	);
+
+	// Periodic health check (every 30s)
+	runHealthCheck();
+	healthCheckInterval = setInterval(runHealthCheck, 30_000);
+
+	log('Fusion Copilot activated');
+}
+
+// ── Chat Handler ────────────────────────────────────────────────────────────
+
+async function handleChatRequest(
+	request: vscode.ChatRequest,
+	context: vscode.ChatContext,
+	stream: vscode.ChatResponseStream,
+	token: vscode.CancellationToken,
+): Promise<vscode.ChatResult> {
+
+	// Handle /status command
+	if (request.command === 'status') {
+		return await handleStatusCommand(stream);
+	}
+
+	// Handle /memory command
+	if (request.command === 'memory') {
+		stream.markdown(`🔍 **Memory Search**: "${request.prompt}"\n\n_Use the fusion-gate MCP \`memory_search\` tool for this._`);
+		return {};
+	}
+
+	// Handle /jules command
+	if (request.command === 'jules') {
+		return await handleJulesCommand(request.prompt, stream);
+	}
+
+	// Handle /deepthink command
+	if (request.command === 'deepthink') {
+		return await handleDeepthinkCommand(request.prompt, stream);
+	}
+
+	// Handle /deepsearch command
+	if (request.command === 'deepsearch') {
+		return await handleDeepsearchCommand(request.prompt, stream);
+	}
+
+	// Handle /orchestrate command
+	if (request.command === 'orchestrate') {
+		return await handleOrchestrateCommand(stream);
+	}
+
+	// Route the task
+	const taskInput: TaskInput = {
+		type: 'chat',
+		prompt: request.prompt,
+		command: request.command,
+		contextFileCount: request.references?.length ?? 0,
+	};
+
+	const decision = routeTask(taskInput);
+	log(`[router] ${formatDecision(decision)} — ${decision.reason}`);
+	stream.progress(`${formatDecision(decision)}`);
+
+	const abortController = new AbortController();
+	const cancelSub = token.onCancellationRequested(() => abortController.abort());
+
+	try {
+		switch (decision.target) {
+			case 'qwen-3.5-9b':
+				await streamFromQwenFarm(request, context, stream, abortController.signal);
+				break;
+			case 'qwen3-coder-80b':
+				await streamFromCoder(request, context, stream, abortController.signal);
+				break;
+			case 'gemini-3.1-pro':
+				if (!geminiClient.isConfigured) {
+					stream.markdown('🧠 _Gemini 3.1 Pro API key not configured. Fallback to local Qwen3._\n\n');
+					await streamFromCoder(request, context, stream, abortController.signal);
+				} else {
+					await streamFromGemini(request, context, stream, abortController.signal);
+				}
+				break;
+		}
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		if (!msg.includes('abort') && !token.isCancellationRequested) {
+			stream.markdown(`\n\n❌ **Error**: ${msg}`);
+			log(`[error] ${msg}`);
+		}
+	} finally {
+		cancelSub.dispose();
+	}
+
+	return {};
+}
+
+async function streamFromQwenFarm(
+	request: vscode.ChatRequest,
+	_context: vscode.ChatContext,
+	stream: vscode.ChatResponseStream,
+	signal: AbortSignal,
+): Promise<void> {
+	const messages = [
+		{ role: 'system' as const, content: getSystemPrompt() },
+		{ role: 'user' as const, content: request.prompt },
+	];
+
+	for await (const chunk of qwenFarm.streamComplete({ messages, abortSignal: signal })) {
+		stream.markdown(chunk.text);
+	}
+}
+
+async function streamFromCoder(
+	request: vscode.ChatRequest,
+	_context: vscode.ChatContext,
+	stream: vscode.ChatResponseStream,
+	signal: AbortSignal,
+): Promise<void> {
+	const messages = [
+		{ role: 'system' as const, content: getSystemPrompt() },
+		{ role: 'user' as const, content: request.prompt },
+	];
+
+	for await (const chunk of coderClient.streamComplete({ messages, abortSignal: signal })) {
+		stream.markdown(chunk.text);
+	}
+}
+
+async function streamFromGemini(
+	request: vscode.ChatRequest,
+	_context: vscode.ChatContext,
+	stream: vscode.ChatResponseStream,
+	signal: AbortSignal,
+): Promise<void> {
+	const config = vscode.workspace.getConfiguration('fusion.copilot');
+	const model = config.get<string>('gemini.model', 'gemini-3.1-pro');
+	const messages = [
+		{ role: 'system' as const, content: getSystemPrompt() },
+		{ role: 'user' as const, content: request.prompt },
+	];
+
+	// For MVP, just streaming without full tool loop, but using the client
+	let isThinking = false;
+	
+	try {
+		for await (const chunk of geminiClient.streamChat({ model, messages, enableThinking: true, abortSignal: signal })) {
+			if (chunk.type === 'thinking') {
+				if (!isThinking) {
+					stream.markdown('\n\n_💭 Thinking..._\n');
+					isThinking = true;
+				}
+			} else if (chunk.type === 'text') {
+				stream.markdown(chunk.text ?? '');
+			} else if (chunk.type === 'tool_call') {
+				stream.progress(`Using tool: ${chunk.toolCall?.name}`);
+			}
+		}
+	} catch (e) {
+		const err = e as Error;
+		stream.markdown(`\n\n❌ **Gemini Error**: ${err.message}`);
+	}
+}
+
+// ── Inline Completion (Project Ghost-Text) ──────────────────────────────────
+// Extracted to src/inline/ghostTextProvider.ts for clean FIM token handling.
+// Uses ContextBuilder + QwenFarm.streamRawComplete for zero-latency completions.
+
+// ── Commands ────────────────────────────────────────────────────────────────
+
+async function handleStatusCommand(stream: vscode.ChatResponseStream): Promise<vscode.ChatResult> {
+	stream.progress('Checking all models...');
+
+	const farmStatus = await qwenFarm.getStatus();
+	const coderHealth = await coderClient.healthCheck();
+
+	let md = '## 🔥 Fusion Copilot Status\n\n';
+
+	// Qwen Farm
+	md += `### ⚡ Qwen 3.5 9B Farm\n`;
+	md += `Online: **${farmStatus.onlineInstances}/${farmStatus.totalInstances}**\n\n`;
+	for (const inst of farmStatus.instances) {
+		const icon = inst.online ? '🟢' : '🔴';
+		md += `${icon} Port ${inst.port} — ${inst.online ? `${inst.latencyMs}ms` : inst.error ?? 'offline'}\n\n`;
+	}
+
+	// Coder
+	md += `### 🔧 Qwen3 Coder 80B MoE\n`;
+	md += coderHealth.online
+		? `🟢 Online — ${coderHealth.latencyMs}ms (${coderHealth.model ?? 'default'})\n\n`
+		: `🔴 Offline — ${coderHealth.error}\n\n`;
+
+	// Gemini
+	md += `### 🧠 Gemini 2.5 Pro\n`;
+	md += `⚪ Configured via API key\n\n`;
+
+	// Memory
+	md += `### 📚 Fusion Gate + Memory\n`;
+	md += `MCP: Enabled (17+ tools)\n\n`;
+
+	stream.markdown(md);
+	return {};
+}
+
+async function selectModel(): Promise<void> {
+	const items = [
+		{ label: '⚡ Qwen 3.5 9B', description: 'Local, fastest', detail: 'Use for simple tasks and inline completions' },
+		{ label: '🔧 Qwen3 Coder 80B', description: 'Local, Sonnet 4.5-level', detail: 'Use for serious coding and refactoring' },
+		{ label: '🧠 Gemini 2.5 Pro', description: 'Cloud, 1M context', detail: 'Use for architecture and deep reasoning' },
+		{ label: '🤖 Auto Router', description: 'Let Fusion decide', detail: 'Automatically picks the best model for each task' },
+	];
+
+	const selected = await vscode.window.showQuickPick(items, {
+		title: 'Select AI Model',
+		placeHolder: 'Choose a model or use auto-routing',
+	});
+
+	if (selected) {
+		vscode.window.showInformationMessage(`Model: ${selected.label}`);
+	}
+}
+
+async function toggleInline(): Promise<void> {
+	const config = vscode.workspace.getConfiguration('fusion.copilot');
+	const current = config.get<boolean>('inline.enabled', true);
+	await config.update('inline.enabled', !current, vscode.ConfigurationTarget.Global);
+	vscode.window.showInformationMessage(`Inline completions: ${!current ? 'ON' : 'OFF'}`);
+}
+
+async function configureGeminiKey(context: vscode.ExtensionContext): Promise<void> {
+	const key = await vscode.window.showInputBox({
+		title: 'Gemini API Key',
+		prompt: 'Enter your Google AI Studio API key',
+		password: true,
+		placeHolder: 'AIza...',
+	});
+	if (key) {
+		await context.secrets.store('fusion.copilot.geminiKey', key);
+		vscode.window.showInformationMessage('✅ Gemini API key saved');
+	}
+}
+
+async function launchFarm(): Promise<void> {
+	const terminal = vscode.window.createTerminal({
+		name: 'Fusion AI Farm',
+		cwd: '/Users/ryyota/fusion-gate',
+	});
+	terminal.sendText('bash scripts/launch_qwen_farm.sh');
+	terminal.show();
+}
+// ── Agent Manager: Slash Command Handlers ───────────────────────────────────
+
+async function handleJulesCommand(prompt: string, stream: vscode.ChatResponseStream): Promise<vscode.ChatResult> {
+	if (!prompt.trim()) {
+		stream.markdown('⚠️ Usage: `/jules <task description>`\n\nExample: `/jules Refactor the auth module to use JWT tokens`\n');
+		return {};
+	}
+
+	stream.progress('📤 Submitting task to Jules...');
+	log(`[jules] Submitting: ${prompt}`);
+
+	const result = await orchestrator.jules.submitTask(prompt);
+	if (result.success) {
+		stream.markdown(`✅ **Task submitted to Jules!**\n\n> ${prompt}\n\n${result.output}\n\nJules will create a PR when done. Check with \`gh pr list\`.\n`);
+	} else {
+		stream.markdown(`❌ **Jules submission failed**\n\n\`\`\`\n${result.error}\n\`\`\`\n\n> Make sure \`jules\` CLI is installed: \`npm i -g @anthropic-ai/jules\`\n`);
+	}
+	return {};
+}
+
+async function handleDeepthinkCommand(prompt: string, stream: vscode.ChatResponseStream): Promise<vscode.ChatResult> {
+	if (!prompt.trim()) {
+		stream.markdown('⚠️ Usage: `/deepthink <design question>`\n\nExample: `/deepthink Should we use microservices or monolith for this project?`\n');
+		return {};
+	}
+
+	stream.markdown('## 🧠 DEEPTHINK\n\n');
+	stream.progress('Engaging Gemini CLI deep reasoning...');
+	log(`[deepthink] Query: ${prompt}`);
+
+	const result = await orchestrator.gemini.deepthink(prompt);
+	if (result.success) {
+		stream.markdown(result.output);
+	} else {
+		stream.markdown(`❌ **DEEPTHINK failed**\n\n\`\`\`\n${result.error}\n\`\`\`\n\n> Make sure \`gemini\` CLI is installed and authenticated.\n`);
+	}
+	return {};
+}
+
+async function handleDeepsearchCommand(prompt: string, stream: vscode.ChatResponseStream): Promise<vscode.ChatResult> {
+	if (!prompt.trim()) {
+		stream.markdown('⚠️ Usage: `/deepsearch <research query>`\n\nExample: `/deepsearch Best practices for KV cache optimization in transformer models`\n');
+		return {};
+	}
+
+	stream.markdown('## 🔍 DEEPSEARCH\n\n');
+	stream.progress('Engaging Gemini CLI deep search...');
+	log(`[deepsearch] Query: ${prompt}`);
+
+	const result = await orchestrator.gemini.deepsearch(prompt);
+	if (result.success) {
+		stream.markdown(result.output);
+	} else {
+		stream.markdown(`❌ **DEEPSEARCH failed**\n\n\`\`\`\n${result.error}\n\`\`\`\n\n> Make sure \`gemini\` CLI is installed and authenticated.\n`);
+	}
+	return {};
+}
+
+async function handleOrchestrateCommand(stream: vscode.ChatResponseStream): Promise<vscode.ChatResult> {
+	stream.markdown('## 🎼 Full Orchestration Pipeline\n\n');
+	log('[orchestrate] Starting full pipeline...');
+	await orchestrator.fullPipeline(stream);
+	return {};
+}
+
+// ── Palette Command Wrappers ────────────────────────────────────────────────
+
+async function orchestrateFromPalette(): Promise<void> {
+	vscode.window.showInformationMessage(
+		'🎼 Orchestration started! Use @fusion /orchestrate in chat for full output.'
+	);
+	// Open chat panel with the orchestrate command pre-filled
+	await vscode.commands.executeCommand('workbench.action.chat.open');
+}
+
+async function nightModeFromPalette(): Promise<void> {
+	const confirm = await vscode.window.showWarningMessage(
+		'🌙 Night Mode will analyze issues and submit tasks to Jules for overnight processing. Continue?',
+		'Yes, activate Night Mode',
+		'Cancel',
+	);
+	if (confirm === 'Yes, activate Night Mode') {
+		vscode.window.showInformationMessage('🌙 Night Mode activated! Use @fusion /orchestrate in chat.');
+		await vscode.commands.executeCommand('workbench.action.chat.open');
+	}
+}
+
+// ── Health Check ────────────────────────────────────────────────────────────
+
+async function runHealthCheck(): Promise<void> {
+	try {
+		const [farmStatus, coderHealth] = await Promise.all([
+			qwenFarm.getStatus(),
+			coderClient.healthCheck(),
+		]);
+		statusBar.update(farmStatus, coderHealth, true /* gemini assumed online */);
+	} catch (err) {
+		log(`Health check error: ${err}`);
+	}
+}
+
+// ── Deactivation ────────────────────────────────────────────────────────────
+
+export function deactivate(): void {
+	if (healthCheckInterval) { clearInterval(healthCheckInterval); }
+	log('Fusion Copilot deactivated');
+}
+
+
+# ================================================================
+# FILE: src/context/contextBuilder.ts
+# ================================================================
+import * as vscode from 'vscode';
+
+export interface InlineContext {
+	prefix: string;
+	suffix: string;
+	crossFileContext: string;
+	fimPrompt: string;
+}
+
+/**
+ * Super-fast Context Builder for Fusion Copilot.
+ * Replaces the black-box logic of Gemini Code Assist with a fully transparent, 
+ * zero-latency cross-file context extractor.
+ */
+export class ContextBuilder {
+	
+	// Max lines to extract for prefix/suffix
+	private static MAX_PREFIX_LINES = 150;
+	private static MAX_SUFFIX_LINES = 50;
+
+	/**
+	 * Build the full context needed for an inline completion request.
+	 */
+	static build(document: vscode.TextDocument, position: vscode.Position): InlineContext {
+		const prefix = this.getPrefix(document, position);
+		const suffix = this.getSuffix(document, position);
+		const crossFileContext = this.getCrossFileContext(document);
+
+		const fimPrompt = this.formatFimPrompt(prefix, suffix, crossFileContext, document.languageId);
+
+		return {
+			prefix,
+			suffix,
+			crossFileContext,
+			fimPrompt
+		};
+	}
+
+	private static getPrefix(document: vscode.TextDocument, position: vscode.Position): string {
+		const startLine = Math.max(0, position.line - this.MAX_PREFIX_LINES);
+		const range = new vscode.Range(startLine, 0, position.line, position.character);
+		return document.getText(range);
+	}
+
+	private static getSuffix(document: vscode.TextDocument, position: vscode.Position): string {
+		const endLine = Math.min(document.lineCount - 1, position.line + this.MAX_SUFFIX_LINES);
+		
+		// Ensure we don't go out of bounds on the end line
+		const endChar = document.lineAt(endLine).text.length;
+		const range = new vscode.Range(position.line, position.character, endLine, endChar);
+		return document.getText(range);
+	}
+
+	/**
+	 * Pulls snippets from other recently active tabs.
+	 */
+	private static getCrossFileContext(activeDoc: vscode.TextDocument): string {
+		const openDocs = vscode.workspace.textDocuments.filter(
+			doc => doc.uri.scheme === 'file' && doc.uri.fsPath !== activeDoc.uri.fsPath
+		);
+
+		// Just take the first 2 open files for extreme speed
+		const contextDocs = openDocs.slice(0, 2);
+		
+		let contextStr = '';
+		for (const doc of contextDocs) {
+			const text = doc.getText();
+			// Grab just the first 50 lines (usually imports and interfaces)
+			const preview = text.split('\n').slice(0, 50).join('\n');
+			contextStr += `\n// --- File: ${vscode.workspace.asRelativePath(doc.uri)} ---\n${preview}\n`;
+		}
+
+		return contextStr.trim();
+	}
+
+	/**
+	 * Formats the prompt using Qwen/StarCoder typical FIM tokens.
+	 */
+	private static formatFimPrompt(prefix: string, suffix: string, crossFileContext: string, langId: string): string {
+		// If there is cross file context, we prepend it as a comment context block.
+		const contextBlock = crossFileContext 
+			? `/* Related Context:\n${crossFileContext}\n*/\n`
+			: '';
+
+		const fullPrefix = contextBlock + prefix;
+
+		// The standard FIM pattern for Qwen2.5-Coder / CodeLlama is:
+		// <|fim_prefix|> prefix <|fim_suffix|> suffix <|fim_middle|>
+		return `<|fim_prefix|>${fullPrefix}<|fim_suffix|>${suffix}<|fim_middle|>`;
+	}
+}
+
+
+# ================================================================
+# FILE: src/inline/ghostTextProvider.ts
+# ================================================================
+/*---------------------------------------------------------------------------------------------
+ *  Fusion Copilot — Ghost Text Inline Completion Provider
+ *  Uses ContextBuilder (FIM) + QwenFarm streamRawComplete for zero-latency completions.
+ *--------------------------------------------------------------------------------------------*/
+
+import * as vscode from 'vscode';
+import { ContextBuilder } from '../context/contextBuilder.js';
+import type { QwenFarm } from '../providers/qwenFarm.js';
+
+/**
+ * Create the inline completion handler bound to the given QwenFarm instance.
+ */
+export function createInlineHandler(qwenFarm: QwenFarm) {
+	return async function handleInlineCompletion(
+		document: vscode.TextDocument,
+		position: vscode.Position,
+		_context: vscode.InlineCompletionContext,
+		token: vscode.CancellationToken,
+	): Promise<vscode.InlineCompletionItem[]> {
+		if (token.isCancellationRequested) { return []; }
+
+		const config = vscode.workspace.getConfiguration('fusion.copilot');
+		const debounceMs = config.get<number>('inline.debounceMs', 150);
+		const timeoutMs = config.get<number>('inline.timeoutMs', 2000);
+
+		// Aggressive debounce: wait for typing to stop
+		await new Promise(resolve => setTimeout(resolve, debounceMs));
+		if (token.isCancellationRequested) { return []; }
+
+		// Build FIM prompt with cross-file context
+		const inlineCtx = ContextBuilder.build(document, position);
+
+		const abortController = new AbortController();
+		const cancelSub = token.onCancellationRequested(() => abortController.abort());
+		const timer = setTimeout(() => abortController.abort(), timeoutMs);
+
+		try {
+			let fullText = '';
+
+			// Stream raw FIM from Qwen farm (/v1/completions)
+			const stopTokens = ['\n\n', '<' + '|file_separator|' + '>'];
+			for await (const chunk of qwenFarm.streamRawComplete({
+				prompt: inlineCtx.fimPrompt,
+				maxTokens: 64,
+				stop: stopTokens,
+				abortSignal: abortController.signal,
+			})) {
+				fullText += chunk.text;
+				// Early exit on double newline
+				if (fullText.includes('\n\n')) {
+					fullText = fullText.split('\n\n')[0];
+					break;
+				}
+			}
+
+			clearTimeout(timer);
+
+			if (!fullText.trim()) { return []; }
+
+			return [new vscode.InlineCompletionItem(
+				fullText.trimEnd(),
+				new vscode.Range(position, position),
+			)];
+		} catch {
+			// Abort or timeout — silent
+			return [];
+		} finally {
+			clearTimeout(timer);
+			cancelSub.dispose();
+		}
+	};
+}
+
+
+# ================================================================
+# FILE: src/orchestrator/agentOrchestrator.ts
+# ================================================================
+/*---------------------------------------------------------------------------------------------
+ *  Fusion Copilot — Agent Orchestrator
+ *  Bridges Antigravity IDE with Gemini CLI (DEEPTHINK/DEEPSEARCH) and Jules (async tasks).
+ *  This is the heart of the Agent Manager — the conductor of the AI orchestra.
+ *--------------------------------------------------------------------------------------------*/
+
+import * as vscode from 'vscode';
+import { exec } from 'child_process';
+
+// ── Types ───────────────────────────────────────────────────────────────────
+
+export interface OrchestratorResult {
+	success: boolean;
+	output: string;
+	error?: string;
+}
+
+export interface JulesSession {
+	taskDescription: string;
+	repo: string;
+	status: 'queued' | 'running' | 'done' | 'error';
+}
+
+// ── Shell Executor ──────────────────────────────────────────────────────────
+
+function runShell(command: string, cwd?: string): Promise<OrchestratorResult> {
+	return new Promise((resolve) => {
+		const options: { cwd?: string; timeout: number; maxBuffer: number; env: NodeJS.ProcessEnv } = {
+			timeout: 120_000, // 2 minute max
+			maxBuffer: 10 * 1024 * 1024, // 10MB
+			env: {
+				...process.env,
+				PATH: `/opt/homebrew/bin:/usr/local/bin:${process.env.PATH ?? ''}`,
+			},
+		};
+		if (cwd) { options.cwd = cwd; }
+
+		exec(command, options, (error, stdout, stderr) => {
+			if (error) {
+				resolve({
+					success: false,
+					output: stdout.toString(),
+					error: `${error.message}\n${stderr.toString()}`,
+				});
+			} else {
+				resolve({
+					success: true,
+					output: stdout.toString(),
+				});
+			}
+		});
+	});
+}
+
+// ── Jules Integration ───────────────────────────────────────────────────────
+
+export class JulesAgent {
+	private sessions: JulesSession[] = [];
+
+	/**
+	 * Submit a task to Jules for async execution.
+	 */
+	async submitTask(taskDescription: string, repo?: string): Promise<OrchestratorResult> {
+		const repoPath = repo ?? this.getWorkspaceRoot() ?? '.';
+		const escapedTask = taskDescription.replace(/"/g, '\\"').replace(/\n/g, ' ');
+
+		const result = await runShell(
+			`jules remote new --repo "${repoPath}" --session "${escapedTask}"`,
+			repoPath,
+		);
+
+		if (result.success) {
+			this.sessions.push({
+				taskDescription,
+				repo: repoPath,
+				status: 'queued',
+			});
+		}
+
+		return result;
+	}
+
+	/**
+	 * Submit multiple tasks from a task list (one per line).
+	 */
+	async submitBatch(taskList: string, repo?: string): Promise<OrchestratorResult[]> {
+		const tasks = taskList.split('\n').filter(line => line.trim().length > 0);
+		const results: OrchestratorResult[] = [];
+
+		for (const task of tasks) {
+			const result = await this.submitTask(task.trim(), repo);
+			results.push(result);
+		}
+
+		return results;
+	}
+
+	getActiveSessions(): JulesSession[] {
+		return this.sessions;
+	}
+
+	private getWorkspaceRoot(): string | undefined {
+		return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+	}
+}
+
+// ── Gemini CLI Integration ──────────────────────────────────────────────────
+
+export class GeminiCliAgent {
+
+	/**
+	 * Run Gemini CLI with DEEPTHINK mode for heavy design/architecture problems.
+	 */
+	async deepthink(prompt: string): Promise<OrchestratorResult> {
+		const escapedPrompt = prompt.replace(/"/g, '\\"').replace(/`/g, '\\`');
+		return runShell(`gemini -p "DEEPTHINK: ${escapedPrompt}"`);
+	}
+
+	/**
+	 * Run Gemini CLI with DEEPSEARCH mode for technical research.
+	 */
+	async deepsearch(query: string): Promise<OrchestratorResult> {
+		const escapedQuery = query.replace(/"/g, '\\"').replace(/`/g, '\\`');
+		return runShell(`gemini -p "DEEPSEARCH: ${escapedQuery}"`);
+	}
+
+	/**
+	 * Analyze GitHub issues and pick the most impactful one.
+	 */
+	async analyzeIssues(): Promise<OrchestratorResult> {
+		return runShell(
+			`gemini -p "Analyze these GitHub issues. Rank by impact and complexity. For each, give a 1-line task description suitable for automated implementation.\n$(gh issue list --assignee @me --limit 10 --json title,body | jq -r '.[] | .title')"`,
+		);
+	}
+
+	/**
+	 * The Ultimate Combo: Analyze issues → pick most tedious → send to Jules.
+	 */
+	async analyzeAndDelegate(): Promise<OrchestratorResult> {
+		return runShell(
+			`gemini -p "Find the most tedious issue that would benefit most from automated implementation. Print ONLY the issue title verbatim, nothing else.\n$(gh issue list --assignee @me --limit 10)" | jules remote new --repo .`,
+		);
+	}
+}
+
+// ── Orchestration Pipeline ──────────────────────────────────────────────────
+
+export class Orchestrator {
+	public readonly jules = new JulesAgent();
+	public readonly gemini = new GeminiCliAgent();
+
+	/**
+	 * Full orchestration pipeline:
+	 * 1. Gemini analyzes issues
+	 * 2. Gemini decomposes into tasks
+	 * 3. Each task is submitted to Jules
+	 */
+	async fullPipeline(stream: vscode.ChatResponseStream): Promise<void> {
+		stream.progress('🔍 Step 1: Analyzing GitHub issues with Gemini DEEPTHINK...');
+
+		const analysis = await this.gemini.analyzeIssues();
+		if (!analysis.success) {
+			stream.markdown(`❌ **Issue analysis failed**: ${analysis.error}\n\n`);
+			stream.markdown('> Make sure `gh` (GitHub CLI) and `gemini` (Gemini CLI) are installed and authenticated.\n');
+			return;
+		}
+
+		stream.markdown(`### 📊 Issue Analysis\n\n${analysis.output}\n\n`);
+		stream.progress('🔧 Step 2: Decomposing into Jules tasks...');
+
+		// Extract task lines from Gemini's output
+		const tasks = analysis.output
+			.split('\n')
+			.filter(line => line.trim().length > 5)
+			.slice(0, 5); // Max 5 parallel Jules sessions
+
+		if (tasks.length === 0) {
+			stream.markdown('⚠️ No actionable tasks found in the analysis.\n');
+			return;
+		}
+
+		stream.markdown(`### 🚀 Submitting ${tasks.length} tasks to Jules\n\n`);
+
+		for (const task of tasks) {
+			stream.progress(`Submitting: ${task.slice(0, 60)}...`);
+			const result = await this.jules.submitTask(task);
+			const icon = result.success ? '✅' : '❌';
+			stream.markdown(`${icon} ${task}\n\n`);
+		}
+
+		stream.markdown(`\n---\n\n🎉 **Orchestration complete!** ${tasks.length} tasks submitted to Jules.\nCheck progress with \`jules list\` or GitHub PRs.\n`);
+	}
+
+	/**
+	 * Night mode: Queue up overnight work.
+	 */
+	async nightMode(stream: vscode.ChatResponseStream): Promise<void> {
+		stream.markdown('## 🌙 Night Mode Activated\n\n');
+		stream.progress('Analyzing issues for overnight development...');
+
+		const analysis = await this.gemini.deepthink(
+			'Analyze these GitHub issues and create a prioritized overnight development plan. ' +
+			'Output as a numbered list of specific, actionable tasks that can be automated. ' +
+			'Focus on tasks that are tedious but well-defined.'
+		);
+
+		if (!analysis.success) {
+			stream.markdown(`❌ DEEPTHINK analysis failed: ${analysis.error}\n`);
+			return;
+		}
+
+		stream.markdown(`### 🧠 DEEPTHINK Analysis\n\n${analysis.output}\n\n`);
+		stream.markdown('---\n\n');
+
+		const tasks = analysis.output
+			.split('\n')
+			.filter(line => /^\d+[\.\)]/.test(line.trim()))
+			.slice(0, 8);
+
+		if (tasks.length > 0) {
+			stream.markdown(`### 🤖 Submitting ${tasks.length} tasks to Jules\n\n`);
+			for (const task of tasks) {
+				const result = await this.jules.submitTask(task);
+				stream.markdown(`${result.success ? '✅' : '❌'} ${task}\n\n`);
+			}
+			stream.markdown('\n🌙 **Go to sleep. Jules is working overnight.**\n');
+			stream.markdown('Check `gh pr list` in the morning for ready PRs.\n');
+		} else {
+			stream.markdown('⚠️ Could not extract actionable tasks. Try running `/orchestrate` manually.\n');
+		}
+	}
+}
+
+
+# ================================================================
+# FILE: src/providers/localAiClient.ts
+# ================================================================
+/*---------------------------------------------------------------------------------------------
+ *  Fusion Copilot — Local AI Client
+ *  OpenAI-compatible API client for MLX inference servers (Qwen, etc.)
+ *  
+ *  Connects to local MLX servers running OpenAI-compatible endpoints.
+ *  Supports streaming, non-streaming, health checks, and abort signals.
+ *--------------------------------------------------------------------------------------------*/
+
+export interface LocalAiRequestOptions {
+	model?: string;
+	messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
+	maxTokens?: number;
+	temperature?: number;
+	stop?: string[];
+	stream?: boolean;
+	abortSignal?: AbortSignal;
+}
+
+export interface LocalAiStreamChunk {
+	text: string;
+	finishReason?: string;
+}
+
+export interface LocalAiResponse {
+	text: string;
+	usage?: {
+		promptTokens: number;
+		completionTokens: number;
+		totalTokens: number;
+	};
+	finishReason?: string;
+	latencyMs: number;
+}
+
+export interface LocalAiHealthStatus {
+	online: boolean;
+	model?: string;
+	latencyMs: number;
+	error?: string;
+}
+
+/**
+ * Client for OpenAI-compatible local AI servers (MLX, vLLM, llama.cpp, etc.)
+ */
+export class LocalAiClient {
+	constructor(
+		private readonly baseUrl: string,
+		private readonly defaultModel: string = 'default',
+	) {}
+
+	get url(): string {
+		return this.baseUrl;
+	}
+
+	/**
+	 * Check if the server is reachable and responsive.
+	 */
+	async healthCheck(): Promise<LocalAiHealthStatus> {
+		const start = Date.now();
+		try {
+			const controller = new AbortController();
+			const timeout = setTimeout(() => controller.abort(), 3000);
+
+			const res = await fetch(`${this.baseUrl}/v1/models`, {
+				signal: controller.signal,
+			});
+			clearTimeout(timeout);
+
+			if (!res.ok) {
+				return { online: false, latencyMs: Date.now() - start, error: `HTTP ${res.status}` };
+			}
+
+			const data = await res.json() as { data?: Array<{ id: string }> };
+			const model = data?.data?.[0]?.id;
+
+			return { online: true, model, latencyMs: Date.now() - start };
+		} catch (err) {
+			return {
+				online: false,
+				latencyMs: Date.now() - start,
+				error: err instanceof Error ? err.message : String(err),
+			};
+		}
+	}
+
+	/**
+	 * Generate a non-streaming completion.
+	 */
+	async complete(options: LocalAiRequestOptions): Promise<LocalAiResponse> {
+		const start = Date.now();
+
+		const body = {
+			model: options.model ?? this.defaultModel,
+			messages: options.messages,
+			max_tokens: options.maxTokens ?? 2048,
+			temperature: options.temperature ?? 0.3,
+			stop: options.stop,
+			stream: false,
+		};
+
+		const res = await fetch(`${this.baseUrl}/v1/chat/completions`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(body),
+			signal: options.abortSignal,
+		});
+
+		if (!res.ok) {
+			const errorText = await res.text().catch(() => 'Unknown error');
+			throw new Error(`Local AI error ${res.status}: ${errorText}`);
+		}
+
+		const data = await res.json() as {
+			choices: Array<{ message: { content: string }; finish_reason: string }>;
+			usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+		};
+
+		const choice = data.choices?.[0];
+
+		return {
+			text: choice?.message?.content ?? '',
+			usage: data.usage ? {
+				promptTokens: data.usage.prompt_tokens,
+				completionTokens: data.usage.completion_tokens,
+				totalTokens: data.usage.total_tokens,
+			} : undefined,
+			finishReason: choice?.finish_reason,
+			latencyMs: Date.now() - start,
+		};
+	}
+
+	/**
+	 * Generate a streaming completion. Yields text chunks as they arrive.
+	 */
+	async *streamComplete(options: LocalAiRequestOptions): AsyncGenerator<LocalAiStreamChunk> {
+		const body = {
+			model: options.model ?? this.defaultModel,
+			messages: options.messages,
+			max_tokens: options.maxTokens ?? 2048,
+			temperature: options.temperature ?? 0.3,
+			stop: options.stop,
+			stream: true,
+		};
+
+		const res = await fetch(`${this.baseUrl}/v1/chat/completions`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(body),
+			signal: options.abortSignal,
+		});
+
+		if (!res.ok) {
+			const errorText = await res.text().catch(() => 'Unknown error');
+			throw new Error(`Local AI stream error ${res.status}: ${errorText}`);
+		}
+
+		if (!res.body) {
+			throw new Error('No response body for streaming');
+		}
+
+		const reader = res.body.getReader();
+		const decoder = new TextDecoder();
+		let buffer = '';
+
+		try {
+			while (true) {
+				const { done, value } = await reader.read();
+				if (done) { break; }
+
+				buffer += decoder.decode(value, { stream: true });
+				const lines = buffer.split('\n');
+				buffer = lines.pop() ?? '';
+
+				for (const line of lines) {
+					const trimmed = line.trim();
+					if (!trimmed || !trimmed.startsWith('data: ')) { continue; }
+
+					const data = trimmed.slice(6);
+					if (data === '[DONE]') { return; }
+
+					try {
+						const parsed = JSON.parse(data) as {
+							choices: Array<{ delta: { content?: string }; finish_reason?: string }>;
+						};
+						const delta = parsed.choices?.[0]?.delta;
+						if (delta?.content) {
+							yield {
+								text: delta.content,
+								finishReason: parsed.choices[0].finish_reason ?? undefined,
+							};
+						}
+					} catch {
+						// Skip malformed SSE lines
+					}
+				}
+			}
+		} finally {
+			reader.releaseLock();
+		}
+	}
+
+	/**
+	 * Quick single-prompt completion (convenience wrapper).
+	 */
+	async ask(prompt: string, systemPrompt?: string): Promise<string> {
+		const messages: LocalAiRequestOptions['messages'] = [];
+		if (systemPrompt) {
+			messages.push({ role: 'system', content: systemPrompt });
+		}
+		messages.push({ role: 'user', content: prompt });
+
+		const result = await this.complete({ messages });
+		return result.text;
+	}
+
+	/**
+	 * Generate a streaming raw completion (FIM / Ghost Text).
+	 */
+	async *streamRawComplete(options: { model?: string; prompt: string; maxTokens?: number; stop?: string[]; abortSignal?: AbortSignal }): AsyncGenerator<LocalAiStreamChunk> {
+		const body = {
+			model: options.model ?? this.defaultModel,
+			prompt: options.prompt,
+			max_tokens: options.maxTokens ?? 128,
+			temperature: 0.1,
+			stop: options.stop ?? ['\n\n', '<|file_separator|>'],
+			stream: true,
+		};
+
+		const res = await fetch(`${this.baseUrl}/v1/completions`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(body),
+			signal: options.abortSignal,
+		});
+
+		if (!res.ok) {
+			const errorText = await res.text().catch(() => 'Unknown error');
+			throw new Error(`Local AI raw stream error ${res.status}: ${errorText}`);
+		}
+
+		if (!res.body) {
+			throw new Error('No response body for streaming');
+		}
+
+		const reader = res.body.getReader();
+		const decoder = new TextDecoder();
+		let buffer = '';
+
+		try {
+			while (true) {
+				const { done, value } = await reader.read();
+				if (done) { break; }
+
+				buffer += decoder.decode(value, { stream: true });
+				const lines = buffer.split('\n');
+				buffer = lines.pop() ?? '';
+
+				for (const line of lines) {
+					const trimmed = line.trim();
+					if (!trimmed || !trimmed.startsWith('data: ')) { continue; }
+
+					const data = trimmed.slice(6);
+					if (data === '[DONE]') { return; }
+
+					try {
+						const parsed = JSON.parse(data) as {
+							choices: Array<{ text?: string; finish_reason?: string }>;
+						};
+						const choice = parsed.choices?.[0];
+						if (choice?.text) {
+							yield { // Yielding text delta instead of full array
+								text: choice.text,
+								finishReason: choice.finish_reason ?? undefined,
+							};
+						}
+					} catch {
+						// Skip malformed SSE lines
+					}
+				}
+			}
+		} finally {
+			reader.releaseLock();
+		}
+	}
+}
+
+
+# ================================================================
+# FILE: src/providers/qwenFarm.ts
+# ================================================================
+/*---------------------------------------------------------------------------------------------
+ *  Fusion Copilot — Qwen Farm
+ *  Load balancer for multiple Qwen 3.5 9B instances with KV cache
+ *  
+ *  Distributes requests across N MLX server instances using round-robin.
+ *  Each instance pre-loads a shared system prompt into KV cache for instant TTFT.
+ *--------------------------------------------------------------------------------------------*/
+
+import { LocalAiClient, type LocalAiHealthStatus, type LocalAiRequestOptions, type LocalAiResponse, type LocalAiStreamChunk } from './localAiClient.js';
+
+export interface FarmStatus {
+	totalInstances: number;
+	onlineInstances: number;
+	instances: Array<{
+		port: number;
+		online: boolean;
+		model?: string;
+		latencyMs: number;
+		error?: string;
+	}>;
+}
+
+/**
+ * Load balancer over multiple local AI instances.
+ * Round-robins requests across healthy instances for maximum throughput.
+ */
+export class QwenFarm {
+	private readonly clients: LocalAiClient[];
+	private readonly ports: number[];
+	private currentIndex = 0;
+	private healthCache: Map<number, { status: LocalAiHealthStatus; checkedAt: number }> = new Map();
+
+	/** Health cache TTL in ms */
+	private static readonly HEALTH_CACHE_TTL = 30_000;
+
+	constructor(
+		private readonly host: string = 'localhost',
+		ports: number[] = [8010, 8011, 8012, 8013, 8014],
+		private readonly model: string = 'qwen3.5-9b',
+	) {
+		this.ports = ports;
+		this.clients = ports.map(port =>
+			new LocalAiClient(`http://${host}:${port}`, model)
+		);
+	}
+
+	get instanceCount(): number {
+		return this.clients.length;
+	}
+
+	/**
+	 * Get the next healthy instance using round-robin.
+	 * Falls back to any available instance if the primary choice is down.
+	 */
+	private async getNextClient(): Promise<LocalAiClient | null> {
+		const startIdx = this.currentIndex;
+		const total = this.clients.length;
+
+		for (let i = 0; i < total; i++) {
+			const idx = (startIdx + i) % total;
+			const client = this.clients[idx];
+			const port = this.ports[idx];
+
+			// Check health cache first
+			const cached = this.healthCache.get(port);
+			if (cached && Date.now() - cached.checkedAt < QwenFarm.HEALTH_CACHE_TTL) {
+				if (cached.status.online) {
+					this.currentIndex = (idx + 1) % total;
+					return client;
+				}
+				continue;
+			}
+
+			// Cache miss or expired — do a fresh health check
+			const health = await client.healthCheck();
+			this.healthCache.set(port, { status: health, checkedAt: Date.now() });
+
+			if (health.online) {
+				this.currentIndex = (idx + 1) % total;
+				return client;
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Send a completion request to the next available Qwen instance.
+	 */
+	async complete(options: LocalAiRequestOptions): Promise<LocalAiResponse> {
+		const client = await this.getNextClient();
+		if (!client) {
+			throw new Error('No Qwen farm instances are online. Run `launch_qwen_farm.sh` to start them.');
+		}
+		return client.complete({ ...options, model: options.model ?? this.model });
+	}
+
+	/**
+	 * Stream a completion from the next available Qwen instance.
+	 */
+	async *streamComplete(options: LocalAiRequestOptions): AsyncGenerator<LocalAiStreamChunk> {
+		const client = await this.getNextClient();
+		if (!client) {
+			throw new Error('No Qwen farm instances are online.');
+		}
+		yield* client.streamComplete({ ...options, model: options.model ?? this.model });
+	}
+
+	/**
+	 * Stream a raw FIM string from the next available Qwen instance.
+	 */
+	async *streamRawComplete(options: { prompt: string; maxTokens?: number; stop?: string[]; abortSignal?: AbortSignal }): AsyncGenerator<LocalAiStreamChunk> {
+		const client = await this.getNextClient();
+		if (!client) {
+			throw new Error('No Qwen farm instances are online.');
+		}
+		yield* client.streamRawComplete({ ...options, model: this.model });
+	}
+
+	/**
+	 * Quick ask — single prompt, non-streaming.
+	 */
+	async ask(prompt: string, systemPrompt?: string): Promise<string> {
+		const client = await this.getNextClient();
+		if (!client) {
+			throw new Error('No Qwen farm instances are online.');
+		}
+		return client.ask(prompt, systemPrompt);
+	}
+
+	/**
+	 * Check health of all instances in the farm.
+	 */
+	async getStatus(): Promise<FarmStatus> {
+		const checks = await Promise.all(
+			this.clients.map(async (client, i) => {
+				const health = await client.healthCheck();
+				const port = this.ports[i];
+				this.healthCache.set(port, { status: health, checkedAt: Date.now() });
+				return { port, ...health };
+			})
+		);
+
+		return {
+			totalInstances: checks.length,
+			onlineInstances: checks.filter(c => c.online).length,
+			instances: checks,
+		};
+	}
+
+	/**
+	 * Invalidate health cache for all instances (force re-check).
+	 */
+	resetHealthCache(): void {
+		this.healthCache.clear();
+	}
+}
+
+
+# ================================================================
+# FILE: src/providers/geminiClient.ts
+# ================================================================
+/*---------------------------------------------------------------------------------------------
+ *  Fusion Copilot — Gemini Client
+ *  Streaming API integration with @google/genai SDK
+ *  
+ *  Ported from antigravity-gemini-chat with modifications for Fusion Copilot routing.
+ *--------------------------------------------------------------------------------------------*/
+
+import { GoogleGenAI, type GenerateContentParameters, type Content, type Tool } from '@google/genai';
+
+export interface ChatMessage {
+	role: 'system' | 'user' | 'assistant';
+	content: string;
+	toolCalls?: Array<{ id: string; name: string; args: Record<string, unknown> }>;
+	toolResults?: Array<{ callId: string; content: string }>;
+}
+
+export interface GeminiStreamChunk {
+	type: 'text' | 'thinking' | 'tool_call' | 'usage';
+	text?: string;
+	toolCall?: {
+		id: string;
+		name: string;
+		args: Record<string, unknown>;
+	};
+	usage?: {
+		promptTokens: number;
+		completionTokens: number;
+		thinkingTokens: number;
+		totalTokens: number;
+	};
+}
+
+export interface GeminiRequestOptions {
+	model: string;
+	messages: ChatMessage[];
+	systemInstruction?: string;
+	tools?: Tool[];
+	maxOutputTokens?: number;
+	enableThinking?: boolean;
+	abortSignal?: AbortSignal;
+}
+
+/**
+ * Convert ChatMessages to Gemini Content format.
+ */
+function convertToGeminiMessages(messages: ChatMessage[]): { contents: Content[]; systemInstruction?: string } {
+	let systemInstruction: string | undefined;
+	const contents: Content[] = [];
+
+	for (const msg of messages) {
+		if (msg.role === 'system') {
+			systemInstruction = (systemInstruction ? systemInstruction + '\n\n' : '') + msg.content;
+			continue;
+		}
+
+		contents.push({
+			role: msg.role === 'assistant' ? 'model' : 'user',
+			parts: [{ text: msg.content }],
+		});
+	}
+
+	return { contents, systemInstruction };
+}
+
+/**
+ * Gemini API client with streaming support.
+ */
+export class GeminiClient {
+	private _client: GoogleGenAI | undefined;
+
+	constructor(private _apiKey: string) {
+		if (_apiKey) {
+			this._client = new GoogleGenAI({ apiKey: _apiKey });
+		}
+	}
+
+	get isConfigured(): boolean {
+		return !!this._apiKey && !!this._client;
+	}
+
+	setApiKey(apiKey: string): void {
+		this._apiKey = apiKey;
+		this._client = new GoogleGenAI({ apiKey });
+	}
+
+	/**
+	 * Stream a chat completion from Gemini.
+	 */
+	async *streamChat(options: GeminiRequestOptions): AsyncGenerator<GeminiStreamChunk> {
+		if (!this._client) {
+			throw new Error('Gemini client not configured.');
+		}
+
+		const { contents, systemInstruction: extractedSys } = convertToGeminiMessages(options.messages);
+
+		const finalSystemInstruction = [
+			options.systemInstruction,
+			extractedSys,
+		].filter(Boolean).join('\n\n') || undefined;
+
+		const params: GenerateContentParameters = {
+			model: options.model,
+			contents,
+			config: {
+				systemInstruction: finalSystemInstruction,
+				tools: options.tools?.length ? options.tools : undefined,
+				maxOutputTokens: options.maxOutputTokens ?? 65536,
+				thinkingConfig: options.enableThinking ? { includeThoughts: true } : undefined,
+				abortSignal: options.abortSignal,
+			},
+		};
+
+		const stream = await this._client.models.generateContentStream(params);
+
+		for await (const chunk of stream) {
+			if (chunk.candidates?.length) {
+				const candidate = chunk.candidates[0];
+				if (candidate.content?.parts) {
+					for (const part of candidate.content.parts) {
+						if ('thought' in part && part.thought === true && part.text) {
+							yield { type: 'thinking', text: part.text };
+						} else if (part.text) {
+							yield { type: 'text', text: part.text };
+						} else if (part.functionCall?.name) {
+							yield {
+								type: 'tool_call',
+								toolCall: {
+									id: `call_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+									name: part.functionCall.name,
+									args: (part.functionCall.args ?? {}) as Record<string, unknown>,
+								},
+							};
+						}
+					}
+				}
+			}
+
+			if (chunk.usageMetadata) {
+				yield {
+					type: 'usage',
+					usage: {
+						promptTokens: chunk.usageMetadata.promptTokenCount ?? 0,
+						completionTokens: chunk.usageMetadata.candidatesTokenCount ?? 0,
+						thinkingTokens: chunk.usageMetadata.thoughtsTokenCount ?? 0,
+						totalTokens: chunk.usageMetadata.totalTokenCount ?? 0,
+					},
+				};
+			}
+		}
+	}
+
+	/**
+	 * Non-streaming chat — returns full response.
+	 */
+	async chat(options: GeminiRequestOptions): Promise<{ text: string; thinking: string }> {
+		let text = '';
+		let thinking = '';
+
+		for await (const chunk of this.streamChat(options)) {
+			if (chunk.type === 'text') { text += chunk.text ?? ''; }
+			if (chunk.type === 'thinking') { thinking += chunk.text ?? ''; }
+		}
+
+		return { text, thinking };
+	}
+
+	/**
+	 * Quick health check — try listing models.
+	 */
+	async healthCheck(): Promise<boolean> {
+		if (!this._client) { return false; }
+		try {
+			const response = await this._client.models.list();
+			for await (const _model of response) {
+				return true; // At least one model exists
+			}
+			return true;
+		} catch {
+			return false;
+		}
+	}
+}
+
+
+# ================================================================
+# FILE: src/router/taskRouter.ts
+# ================================================================
+/*---------------------------------------------------------------------------------------------
+ *  Fusion Copilot — Task Router
+ *  Intelligent routing of user tasks to the optimal AI model.
+ *  
+ *  Analyzes input complexity, type, and context to decide whether to use:
+ *  - Qwen 3.5 9B (fast, local): simple tasks, inline completions
+ *  - Qwen3 Coder 80B MoE (coding, local): refactoring, code generation
+ *  - Gemini 2.5 Pro (cloud): architecture, deep reasoning, large context
+ *--------------------------------------------------------------------------------------------*/
+
+export type ModelTarget = 'qwen-3.5-9b' | 'qwen3-coder-80b' | 'gemini-3.1-pro';
+
+export interface TaskInput {
+	type: 'chat' | 'inline_completion' | 'slash_command';
+	prompt: string;
+	command?: string;
+	/** Number of files referenced or open */
+	contextFileCount?: number;
+	/** Estimated input token count */
+	inputTokenEstimate?: number;
+	/** Whether the prompt is primarily about code */
+	isCodeHeavy?: boolean;
+}
+
+export interface RoutingDecision {
+	target: ModelTarget;
+	reason: string;
+	confidence: number;
+}
+
+// Keywords that suggest code-heavy tasks
+const CODE_KEYWORDS = [
+	'refactor', 'リファクタ', 'implement', '実装',
+	'fix', 'bug', 'バグ', 'debug', 'デバッグ',
+	'test', 'テスト', 'write', '書いて',
+	'function', '関数', 'class', 'クラス',
+	'optimize', '最適化', 'performance', 'パフォーマンス',
+	'lint', 'type', 'error', 'エラー',
+];
+
+// Keywords suggesting high complexity / deep reasoning
+const REASONING_KEYWORDS = [
+	'architecture', 'アーキテクチャ', 'design', '設計',
+	'explain', '説明', 'why', 'なぜ', 'どうして',
+	'compare', '比較', 'trade-off', 'トレードオフ',
+	'review', 'レビュー', 'security', 'セキュリティ',
+	'plan', 'プラン', '計画', 'strategy', '戦略',
+	'migrate', 'マイグレーション', 'analyze', '分析',
+];
+
+// Keywords for simple tasks
+const SIMPLE_KEYWORDS = [
+	'rename', 'リネーム', 'comment', 'コメント',
+	'format', 'フォーマット', 'import', 'インポート',
+	'translate', '翻訳', 'summarize', '要約',
+	'complete', '補完', 'suggest', 'サジェスト',
+];
+
+/**
+ * Estimate the complexity of a task from 0.0 (trivial) to 1.0 (extremely complex).
+ */
+function estimateComplexity(input: TaskInput): number {
+	let score = 0.5; // baseline
+
+	const lowerPrompt = input.prompt.toLowerCase();
+
+	// Short prompts are likely simpler
+	if (input.prompt.length < 50) { score -= 0.2; }
+	if (input.prompt.length > 500) { score += 0.15; }
+	if (input.prompt.length > 2000) { score += 0.2; }
+
+	// Check for keyword matches
+	const hasCodeKeywords = CODE_KEYWORDS.some(kw => lowerPrompt.includes(kw));
+	const hasReasoningKeywords = REASONING_KEYWORDS.some(kw => lowerPrompt.includes(kw));
+	const hasSimpleKeywords = SIMPLE_KEYWORDS.some(kw => lowerPrompt.includes(kw));
+
+	if (hasSimpleKeywords) { score -= 0.25; }
+	if (hasCodeKeywords) { score += 0.1; }
+	if (hasReasoningKeywords) { score += 0.25; }
+
+	// Many referenced files suggest complexity
+	if (input.contextFileCount && input.contextFileCount > 3) { score += 0.15; }
+	if (input.contextFileCount && input.contextFileCount > 10) { score += 0.2; }
+
+	return Math.max(0, Math.min(1, score));
+}
+
+/**
+ * Detect if the prompt is primarily about code operations.
+ */
+function detectCodeHeavy(prompt: string): boolean {
+	const lower = prompt.toLowerCase();
+
+	// Contains code fences
+	if (prompt.includes('```')) { return true; }
+
+	// References file extensions
+	if (/\.(ts|js|py|rs|go|java|cpp|c|rb|swift|kt)\b/.test(prompt)) { return true; }
+
+	// Code keywords
+	return CODE_KEYWORDS.some(kw => lower.includes(kw));
+}
+
+/**
+ * Route a task to the optimal AI model.
+ */
+export function routeTask(input: TaskInput): RoutingDecision {
+	// ── Rule 1: Slash commands override auto-routing ──
+	if (input.command) {
+		switch (input.command) {
+			case 'quick':
+				return { target: 'qwen-3.5-9b', reason: '/quick command — forced local fast model', confidence: 1.0 };
+			case 'code':
+				return { target: 'qwen3-coder-80b', reason: '/code command — forced coding model', confidence: 1.0 };
+			case 'think':
+				return { target: 'gemini-3.1-pro', reason: '/think command — forced cloud reasoning', confidence: 1.0 };
+		}
+	}
+
+	// ── Rule 2: Inline completions always go to Qwen 3.5 (fastest) ──
+	if (input.type === 'inline_completion') {
+		return { target: 'qwen-3.5-9b', reason: 'Inline completion — requires <50ms latency', confidence: 1.0 };
+	}
+
+	// ── Rule 3: Auto-route based on complexity analysis ──
+	const isCodeHeavy = input.isCodeHeavy ?? detectCodeHeavy(input.prompt);
+	const complexity = estimateComplexity({ ...input, isCodeHeavy });
+
+	// Simple tasks → Qwen 3.5
+	if (complexity < 0.35) {
+		return {
+			target: 'qwen-3.5-9b',
+			reason: `Low complexity (${complexity.toFixed(2)}) — fast local model sufficient`,
+			confidence: 0.8,
+		};
+	}
+
+	// Code-focused medium tasks → Qwen3 Coder
+	if (isCodeHeavy && complexity < 0.75) {
+		return {
+			target: 'qwen3-coder-80b',
+			reason: `Code-heavy + medium complexity (${complexity.toFixed(2)}) — coding specialist`,
+			confidence: 0.85,
+		};
+	}
+
+	// Medium tasks without code focus → still try Coder if possible
+	if (complexity < 0.65) {
+		return {
+			target: 'qwen3-coder-80b',
+			reason: `Medium complexity (${complexity.toFixed(2)}) — local coding model`,
+			confidence: 0.7,
+		};
+	}
+
+	// High complexity → Gemini
+	return {
+		target: 'gemini-3.1-pro',
+		reason: `High complexity (${complexity.toFixed(2)}) — cloud reasoning required`,
+		confidence: 0.9,
+	};
+}
+
+/**
+ * Format a routing decision as a human-readable status string.
+ */
+export function formatDecision(decision: RoutingDecision): string {
+	const icons: Record<ModelTarget, string> = {
+		'qwen-3.5-9b': '⚡',
+		'qwen3-coder-80b': '🔧',
+		'gemini-3.1-pro': '🧠',
+	};
+	const names: Record<ModelTarget, string> = {
+		'qwen-3.5-9b': 'Qwen 3.5 (Local)',
+		'qwen3-coder-80b': 'Qwen3 Coder (Local)',
+		'gemini-3.1-pro': 'Gemini 3.1 Pro (Cloud)',
+	};
+	return `${icons[decision.target]} → ${names[decision.target]}`;
+}
+
+
+# ================================================================
+# FILE: src/tools/mcpBridge.ts
+# ================================================================
+/*---------------------------------------------------------------------------------------------
+ *  Fusion Copilot — MCP Bridge
+ *  Connects to fusion-gate MCP server for tool calling (17+ tools)
+ *  
+ *  Communicates with fusion_gate_mcp.py via JSON-RPC over stdio.
+ *  Provides tool definitions and execution for Chat Participant.
+ *--------------------------------------------------------------------------------------------*/
+
+import * as vscode from 'vscode';
+import { spawn, type ChildProcess } from 'child_process';
+
+export interface McpToolResult {
+	success: boolean;
+	content: string;
+	error?: string;
+}
+
+/**
+ * Bridge to fusion-gate MCP server.
+ * Spawns the MCP server as a subprocess and communicates via JSON-RPC.
+ */
+export class McpBridge {
+	private process: ChildProcess | undefined;
+	private requestId = 0;
+	private pendingRequests = new Map<number, {
+		resolve: (value: unknown) => void;
+		reject: (reason: Error) => void;
+	}>();
+	private buffer = '';
+	private initialized = false;
+
+	constructor(
+		private readonly pythonPath: string = '/Users/ryyota/miniforge3/bin/python3',
+		private readonly mcpScript: string = '/Users/ryyota/fusion-gate/integration/fusion_gate_mcp.py',
+		private readonly pythonPaths: string[] = [
+			'/Users/ryyota/fusion-gate/gate',
+			'/Users/ryyota/fusion-gate/intelligence',
+			'/Users/ryyota/fusion-gate/integration',
+		],
+	) {}
+
+	/**
+	 * Start the MCP server subprocess.
+	 */
+	async start(): Promise<boolean> {
+		if (this.process) { return true; }
+
+		try {
+			this.process = spawn(this.pythonPath, [this.mcpScript], {
+				env: {
+					...process.env,
+					PYTHONUNBUFFERED: '1',
+					PYTHONPATH: this.pythonPaths.join(':'),
+					EMBEDDING2_MODE: 'local_ai',
+				},
+				stdio: ['pipe', 'pipe', 'pipe'],
+			});
+
+			if (!this.process.stdout || !this.process.stdin) {
+				throw new Error('Failed to create MCP process stdio');
+			}
+
+			// Handle stdout (JSON-RPC responses)
+			this.process.stdout.on('data', (data: Buffer) => {
+				this.buffer += data.toString();
+				this.processBuffer();
+			});
+
+			this.process.stderr?.on('data', (data: Buffer) => {
+				// MCP server stderr — log but don't fail
+				const msg = data.toString().trim();
+				if (msg) { console.log(`[mcp-stderr] ${msg}`); }
+			});
+
+			this.process.on('exit', (code) => {
+				console.log(`[mcp] Process exited with code ${code}`);
+				this.process = undefined;
+				this.initialized = false;
+			});
+
+			// Send initialize request
+			const initResult = await this.sendRequest('initialize', {
+				protocolVersion: '2024-11-05',
+				capabilities: {},
+				clientInfo: { name: 'fusion-copilot', version: '0.1.0' },
+			});
+
+			// Send initialized notification
+			this.sendNotification('notifications/initialized', {});
+			this.initialized = true;
+
+			return true;
+		} catch (err) {
+			console.error(`[mcp] Failed to start: ${err}`);
+			this.process = undefined;
+			return false;
+		}
+	}
+
+	/**
+	 * Call an MCP tool by name.
+	 */
+	async callTool(name: string, args: Record<string, unknown> = {}): Promise<McpToolResult> {
+		if (!this.initialized) {
+			const started = await this.start();
+			if (!started) {
+				return { success: false, content: '', error: 'MCP server not available' };
+			}
+		}
+
+		try {
+			const result = await this.sendRequest('tools/call', { name, arguments: args }) as {
+				content?: Array<{ type: string; text: string }>;
+			};
+
+			const text = result?.content?.map((c: { text: string }) => c.text).join('\n') ?? '';
+			return { success: true, content: text };
+		} catch (err) {
+			return {
+				success: false,
+				content: '',
+				error: err instanceof Error ? err.message : String(err),
+			};
+		}
+	}
+
+	/**
+	 * List available MCP tools.
+	 */
+	async listTools(): Promise<Array<{ name: string; description: string }>> {
+		if (!this.initialized) { await this.start(); }
+
+		try {
+			const result = await this.sendRequest('tools/list', {}) as {
+				tools?: Array<{ name: string; description: string }>;
+			};
+			return result?.tools ?? [];
+		} catch {
+			return [];
+		}
+	}
+
+	/**
+	 * Check if MCP bridge is running and healthy.
+	 */
+	get isRunning(): boolean {
+		return this.initialized && !!this.process;
+	}
+
+	/**
+	 * Stop the MCP server.
+	 */
+	stop(): void {
+		if (this.process) {
+			this.process.kill('SIGTERM');
+			this.process = undefined;
+			this.initialized = false;
+		}
+	}
+
+	// ── JSON-RPC ────────────────────────────────────────────────────────────
+
+	private sendRequest(method: string, params: unknown): Promise<unknown> {
+		return new Promise((resolve, reject) => {
+			const id = ++this.requestId;
+			this.pendingRequests.set(id, { resolve, reject });
+
+			const message = JSON.stringify({
+				jsonrpc: '2.0',
+				id,
+				method,
+				params,
+			});
+
+			const frame = `Content-Length: ${Buffer.byteLength(message)}\r\n\r\n${message}`;
+
+			try {
+				this.process?.stdin?.write(frame);
+			} catch (err) {
+				this.pendingRequests.delete(id);
+				reject(new Error(`Failed to send: ${err}`));
+			}
+
+			// Timeout after 30s
+			setTimeout(() => {
+				if (this.pendingRequests.has(id)) {
+					this.pendingRequests.delete(id);
+					reject(new Error(`MCP request timeout: ${method}`));
+				}
+			}, 30_000);
+		});
+	}
+
+	private sendNotification(method: string, params: unknown): void {
+		const message = JSON.stringify({
+			jsonrpc: '2.0',
+			method,
+			params,
+		});
+		const frame = `Content-Length: ${Buffer.byteLength(message)}\r\n\r\n${message}`;
+		this.process?.stdin?.write(frame);
+	}
+
+	private processBuffer(): void {
+		while (true) {
+			const headerEnd = this.buffer.indexOf('\r\n\r\n');
+			if (headerEnd === -1) { break; }
+
+			const header = this.buffer.slice(0, headerEnd);
+			const lengthMatch = header.match(/Content-Length:\s*(\d+)/i);
+			if (!lengthMatch) {
+				this.buffer = this.buffer.slice(headerEnd + 4);
+				continue;
+			}
+
+			const contentLength = parseInt(lengthMatch[1], 10);
+			const contentStart = headerEnd + 4;
+
+			if (this.buffer.length < contentStart + contentLength) {
+				break; // Wait for more data
+			}
+
+			const content = this.buffer.slice(contentStart, contentStart + contentLength);
+			this.buffer = this.buffer.slice(contentStart + contentLength);
+
+			try {
+				const msg = JSON.parse(content) as { id?: number; result?: unknown; error?: { message: string } };
+				if (msg.id !== undefined && this.pendingRequests.has(msg.id)) {
+					const pending = this.pendingRequests.get(msg.id)!;
+					this.pendingRequests.delete(msg.id);
+
+					if (msg.error) {
+						pending.reject(new Error(msg.error.message));
+					} else {
+						pending.resolve(msg.result);
+					}
+				}
+			} catch {
+				// Skip malformed JSON
+			}
+		}
+	}
+}
+
+
+# ================================================================
+# FILE: src/ui/statusBar.ts
+# ================================================================
+/*---------------------------------------------------------------------------------------------
+ *  Fusion Copilot — Status Bar
+ *  Shows real-time model status in the VS Code status bar.
+ *--------------------------------------------------------------------------------------------*/
+
+import * as vscode from 'vscode';
+import type { FarmStatus } from '../providers/qwenFarm.js';
+import type { LocalAiHealthStatus } from '../providers/localAiClient.js';
+
+export class FusionStatusBar {
+	private readonly item: vscode.StatusBarItem;
+	private disposed = false;
+
+	constructor() {
+		this.item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+		this.item.command = 'fusion.copilot.selectModel';
+		this.item.tooltip = 'Fusion Copilot — Click to select model';
+		this.setLoading();
+		this.item.show();
+	}
+
+	/** Show loading state */
+	setLoading(): void {
+		this.item.text = '$(loading~spin) Fusion';
+		this.item.backgroundColor = undefined;
+	}
+
+	/** Update status bar with current health info */
+	update(farm: FarmStatus | null, coder: LocalAiHealthStatus | null, geminiOnline: boolean): void {
+		if (this.disposed) { return; }
+
+		const parts: string[] = [];
+
+		// Qwen Farm
+		if (farm) {
+			const farmIcon = farm.onlineInstances > 0 ? '✓' : '✗';
+			parts.push(`Q3.5×${farm.onlineInstances}/${farm.totalInstances} ${farmIcon}`);
+		} else {
+			parts.push('Q3.5 ?');
+		}
+
+		// Coder
+		if (coder) {
+			parts.push(coder.online ? 'Coder ✓' : 'Coder ✗');
+		} else {
+			parts.push('Coder ?');
+		}
+
+		// Gemini
+		parts.push(geminiOnline ? 'Gemini ✓' : 'Gemini ✗');
+
+		// Set appearance based on overall health
+		const allOnline = (farm?.onlineInstances ?? 0) > 0 && (coder?.online ?? false) && geminiOnline;
+		const someOnline = (farm?.onlineInstances ?? 0) > 0 || (coder?.online ?? false) || geminiOnline;
+
+		if (allOnline) {
+			this.item.text = `$(flame) Fusion: ${parts.join(' | ')}`;
+			this.item.backgroundColor = undefined;
+		} else if (someOnline) {
+			this.item.text = `$(warning) Fusion: ${parts.join(' | ')}`;
+			this.item.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
+		} else {
+			this.item.text = `$(error) Fusion: ALL OFFLINE`;
+			this.item.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
+		}
+	}
+
+	/** Set a temporary status message */
+	flash(message: string, durationMs: number = 3000): void {
+		const prev = this.item.text;
+		this.item.text = `$(flame) ${message}`;
+		setTimeout(() => {
+			if (!this.disposed) { this.item.text = prev; }
+		}, durationMs);
+	}
+
+	dispose(): void {
+		this.disposed = true;
+		this.item.dispose();
+	}
+}
+
+
+# ================================================================
+# FILE: test_ghost_text.sh
+# ================================================================
+#!/bin/bash
+# ============================================================
+# Fusion Copilot — Ghost-Text 自動テストスクリプト
+# Antigravityのターミナルから直接実行してください
+# ============================================================
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR"
+
+echo "🔧 [1/5] ビルド確認..."
+npm run build
+echo "✅ ビルド成功"
+
+echo ""
+echo "🔍 [2/5] TypeScript型チェック..."
+npx tsc --noEmit
+echo "✅ 型エラーなし"
+
+echo ""
+echo "📦 [3/5] 生成済みバンドルの検証..."
+if [ -f dist/extension.js ]; then
+    SIZE=$(wc -c < dist/extension.js | tr -d ' ')
+    echo "✅ dist/extension.js が存在 (${SIZE} bytes)"
+    
+    # FIMトークンの存在確認
+    if grep -q "fim_prefix" dist/extension.js; then
+        echo "✅ FIM (Fill-in-the-Middle) トークンがバンドルに含まれている"
+    else
+        echo "❌ FIMトークンが見つからない！contextBuilder.tsの結合を確認"
+        exit 1
+    fi
+    
+    # streamRawCompleteの存在確認
+    if grep -q "streamRawComplete" dist/extension.js; then
+        echo "✅ streamRawComplete (生FIMストリーミング) がバンドルに含まれている"
+    else
+        echo "❌ streamRawCompleteが見つからない！localAiClient.tsの結合を確認"
+        exit 1
+    fi
+    
+    # ContextBuilderの存在確認
+    if grep -q "getCrossFileContext\|crossFileContext" dist/extension.js; then
+        echo "✅ CrossFileContext (裏タブカンニング) がバンドルに含まれている"
+    else
+        echo "❌ CrossFileContextが見つからない！"
+        exit 1
+    fi
+else
+    echo "❌ dist/extension.js が見つからない"
+    exit 1
+fi
+
+echo ""
+echo "🚀 [4/5] Extension Host デバッグ起動..."
+# 既存のデバッグポート競合を排除
+lsof -ti:9223 | xargs kill -9 2>/dev/null || true
+
+code --extensionDevelopmentPath="$PWD" \
+     --remote-debugging-port=9223 \
+     --user-data-dir="$PWD/.vscode-ext-debug" &
+VSCODE_PID=$!
+echo "  VS Code PID: $VSCODE_PID (ポート9223)"
+echo "  起動待機中 (8秒) ..."
+sleep 8
+
+echo ""
+echo "🔗 [5/5] agent-browser 接続テスト..."
+if command -v agent-browser &>/dev/null; then
+    agent-browser connect 9223 && agent-browser tab
+elif npx -y agent-browser connect 9223 2>/dev/null; then
+    npx -y agent-browser tab
+else
+    echo "⚠️  agent-browserが利用できません。手動でブラウザから http://localhost:9223 にアクセスして確認してください。"
+fi
+
+echo ""
+echo "============================================================"
+echo "🎉 全チェック完了！"
+echo ""
+echo "テスト方法:"
+echo "  1. 開かれたVS Codeウインドウで任意の .ts ファイルを開く"
+echo "  2. コードを入力してタイピングを止める（150ms待つ）"
+echo "  3. 灰色のインラインサジェスト（Ghost Text）が表示されれば成功！"
+echo ""
+echo "※ ローカルAIサーバー (Qwen3.5) がポート8010-8014で起動している必要があります"
+echo "※ 終了するには: kill $VSCODE_PID"
+echo "============================================================"

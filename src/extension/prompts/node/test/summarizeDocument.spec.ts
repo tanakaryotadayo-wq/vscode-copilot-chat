@@ -8,6 +8,7 @@ import * as fs from 'fs/promises';
 import { describe, expect, test } from 'vitest';
 import * as path from '../../../../util/vs/base/common/path';
 import { OffsetRange } from '../../../../util/vs/editor/common/core/ranges/offsetRange';
+import { astNavTreeCostFn } from '../inline/summarizedDocument/astCompressionCostFn';
 import { SummarizedDocumentLineNumberStyle } from '../inline/summarizedDocument/implementation';
 import { RemovableNode } from '../inline/summarizedDocument/summarizeDocument';
 import { fileVariableCostFn } from '../panel/fileVariable';
@@ -26,6 +27,24 @@ describe('createSummarizedDocument[visualizable]', () => {
 		);
 
 		await expect(result.text).toMatchFileSnapshot(summarizedDocPathInFixture(filename));
+	});
+
+	test('[prototype] prefers declaration headers over method bodies', async () => {
+		const result = await generateSummarizedDocument(
+			fromFixtureOld('simpleClass.tsx', 'typescriptreact'),
+			undefined,
+			60,
+			{
+				alwaysUseEllipsisForElisions: true,
+				costFnOverride: astNavTreeCostFn,
+			}
+		);
+
+		expect(result.text).toContain('class Foo');
+		expect(result.text).toContain('constructor()');
+		expect(result.text).toContain('baz()');
+		expect(result.text).not.toContain('this.bar = 1');
+		expect(result.text).not.toContain('return this.bar');
 	});
 
 	test('[cpp] CppNoExtraSemicolons', async () => {

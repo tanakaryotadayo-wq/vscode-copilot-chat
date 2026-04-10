@@ -1,0 +1,150 @@
+{
+  "name": "Fusion Jules Autonomous Loop",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "jules-start",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "c1a9d821-1234-4567-89ab-cdef01234567",
+      "name": "Webhook (IDE Trigger)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "command": "=\"cd '\" + $json.body.repo + \"' && jules remote new --session '\" + $json.body.task + \"'\""
+      },
+      "id": "e2b9d821-1234-4567-89ab-cdef01234568",
+      "name": "Jules: Execute Task",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "command": "=\"cd '\" + $json.body.repo + \"' && git diff HEAD~1 HEAD\""
+      },
+      "id": "f3c9d821-1234-4567-89ab-cdef01234569",
+      "name": "Git: Extract Diff",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "command": "=\"gemini -p 'DEEPTHINK: Review this diff for bugs. If issues exist, output a fix task. If perfect, output PASS.\nDiff:\n\" + $json.stdout + \"'\""
+      },
+      "id": "a4d9d821-1234-4567-89ab-cdef0123456a",
+      "name": "Gemini: DEEPTHINK Review",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "=$json.stdout",
+              "operation": "contains",
+              "value2": "PASS"
+            }
+          ]
+        }
+      },
+      "id": "b5e9d821-1234-4567-89ab-cdef0123456b",
+      "name": "If PASS",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "command": "=\"cd '\" + $('Webhook (IDE Trigger)').item.json.body.repo + \"' && jules remote new --session 'Fix review failures: \" + $json.stdout + \"'\""
+      },
+      "id": "c6f9d821-1234-4567-89ab-cdef0123456c",
+      "name": "Jules: Fix Iteration",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [1050, 500]
+    }
+  ],
+  "connections": {
+    "Webhook (IDE Trigger)": {
+      "main": [
+        [
+          {
+            "node": "Jules: Execute Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Jules: Execute Task": {
+      "main": [
+        [
+          {
+            "node": "Git: Extract Diff",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Git: Extract Diff": {
+      "main": [
+        [
+          {
+            "node": "Gemini: DEEPTHINK Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini: DEEPTHINK Review": {
+      "main": [
+        [
+          {
+            "node": "If PASS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If PASS": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Jules: Fix Iteration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Jules: Fix Iteration": {
+      "main": [
+        [
+          {
+            "node": "Git: Extract Diff",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "f7ab0e78-fe12-4cf3-b9bc-1dcd12345678"
+}
