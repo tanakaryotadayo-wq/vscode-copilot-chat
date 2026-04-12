@@ -382,29 +382,12 @@ export class DefaultIntentRequestHandler {
 				},
 			});
 
-			// Sovereign Memory Hook — direct execution for copilotcli sessions
-			// The .claude/settings.json hook discovery doesn't resolve to ChatHookCommand
-			// for copilotcli session types, so we execute the memory hook directly.
+			// Sovereign Memory Hook — async execution to avoid blocking Extension Host
 			try {
-				const hookPath = '/Users/ryyota/fusion-gate/hooks/sovereign_recall_hook.sh';
-				const { execFileSync } = require('child_process') as typeof import('child_process');
-				const fs = require('fs') as typeof import('fs');
-				if (fs.existsSync(hookPath)) {
-					const hookInput = JSON.stringify({ prompt: this.request.prompt });
-					const hookOutput = execFileSync(hookPath, {
-						input: hookInput,
-						timeout: 10_000,
-						encoding: 'utf-8',
-						env: { ...process.env, SOVEREIGN_PROMPT: this.request.prompt },
-					});
-					if (hookOutput.trim()) {
-						const parsed = JSON.parse(hookOutput);
-						const memoryContext = parsed?.hookSpecificOutput?.additionalContext;
-						if (memoryContext && typeof memoryContext === 'string' && memoryContext.length > 50) {
-							additionalContexts.push(memoryContext);
-							this._logService.info(`[SovereignMemory] Injected ${memoryContext.length} chars of recall context`);
-						}
-					}
+				const memoryContext = await this._executeSovereignHook(this.request.prompt);
+				if (memoryContext) {
+					additionalContexts.push(memoryContext);
+					this._logService.info(`[SovereignMemory] Injected ${memoryContext.length} chars of recall context`);
 				}
 			} catch (e) {
 				this._logService.debug(`[SovereignMemory] Hook execution failed (non-blocking): ${e}`);
@@ -607,6 +590,80 @@ export class DefaultIntentRequestHandler {
 				throw new Error('unreachable'); // retried within the endpoint
 		}
 	}
+
+	/**
+	 * Executes the Sovereign Memory recall hook asynchronously.
+	 * Uses child_process.spawn to avoid blocking the Extension Host main thread.
+	 * Returns the additionalContext string if retrieval succeeds, undefined otherwise.
+	 *
+	 * Hook path resolution: SOVEREIGN_HOOK_PATH env var > default path.
+	 * Timeout: 10 seconds hard limit.
+	 */
+	private _executeSovereignHook(prompt: string): Promise<string | undefined> {
+		const hookPath = process.env['SOVEREIGN_HOOK_PATH'] || '/Users/ryyota/fusion-gate/hooks/sovereign_recall_hook.sh';
+		const fs = require('fs') as typeof import('fs');
+
+		if (!fs.existsSync(hookPath)) {
+			return Promise.resolve(undefined);
+		}
+
+		return new Promise<string | undefined>((resolve) => {
+			const { spawn } = require('child_process') as typeof import('child_process');
+			const hookInput = JSON.stringify({ prompt });
+
+			const proc = spawn(hookPath, [], {
+				env: { ...process.env, SOVEREIGN_PROMPT: prompt },
+				stdio: ['pipe', 'pipe', 'pipe'],
+			});
+
+			let stdout = '';
+			let settled = false;
+
+			const settle = (value: string | undefined) => {
+				if (!settled) {
+					settled = true;
+					resolve(value);
+				}
+			};
+
+			// Hard timeout — kill and resolve empty after 10s
+			const timer = setTimeout(() => {
+				try { proc.kill('SIGTERM'); } catch { /* already dead */ }
+				this._logService.debug('[SovereignMemory] Hook timed out after 10s');
+				settle(undefined);
+			}, 10_000);
+
+			proc.stdout.on('data', (data: Buffer) => { stdout += data.toString(); });
+			proc.stderr.on('data', () => { /* drain stderr to prevent backpressure */ });
+
+			proc.on('close', () => {
+				clearTimeout(timer);
+				try {
+					if (stdout.trim()) {
+						const parsed = JSON.parse(stdout);
+						const ctx = parsed?.hookSpecificOutput?.additionalContext;
+						if (ctx && typeof ctx === 'string' && ctx.length > 50) {
+							settle(ctx);
+							return;
+						}
+					}
+				} catch {
+					// JSON parse failure — non-fatal
+				}
+				settle(undefined);
+			});
+
+			proc.on('error', (err: Error) => {
+				clearTimeout(timer);
+				this._logService.debug(`[SovereignMemory] spawn error: ${err.message}`);
+				settle(undefined);
+			});
+
+			// Write prompt JSON to stdin and close
+			proc.stdin.write(hookInput);
+			proc.stdin.end();
+		});
+	}
 }
 
 interface IInternalRequestResult {
@@ -808,6 +865,7 @@ class DefaultToolCallingLoop extends ToolCallingLoop<IDefaultToolLoopOptions> {
 			return this.options.temperature;
 		}
 	}
+
 }
 
 interface IInternalRequestResult extends IToolCallLoopResult {
