@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as l10n from '@vscode/l10n';
+import * as os from 'os';
 import * as vscode from 'vscode';
 import { ICustomInstructionsService } from '../../../platform/customInstructions/common/customInstructionsService';
 import { INSTRUCTION_FILE_EXTENSION, SKILL_FILENAME } from '../../../platform/customInstructions/common/promptTypes';
@@ -19,6 +20,29 @@ import { basename } from '../../../util/vs/base/common/resources';
 import { URI } from '../../../util/vs/base/common/uri';
 import { IChatPromptFileService } from '../common/chatPromptFileService';
 import { ICopilotCLIAgents } from '../copilotcli/node/copilotCli';
+
+/**
+ * Hook event IDs that are recognized, matching the Claude Agent SDK HookEvent types.
+ */
+const HOOK_EVENT_IDS = [
+	'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'PermissionRequest',
+	'UserPromptSubmit', 'Stop', 'SubagentStart', 'SubagentStop',
+	'PreCompact', 'SessionStart', 'SessionEnd', 'Notification',
+] as const;
+
+interface HookConfig {
+	readonly type: string;
+	readonly command: string;
+}
+
+interface MatcherConfig {
+	readonly matcher: string;
+	readonly hooks: HookConfig[];
+}
+
+interface HooksSettings {
+	readonly hooks?: Partial<Record<string, MatcherConfig[]>>;
+}
 
 export class CopilotCLICustomizationProvider extends Disposable implements vscode.ChatSessionCustomizationProvider {
 
@@ -62,7 +86,7 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 		const agents = await this.getAgentItems();
 		const instructions = await this.getInstructionItems(token);
 		const skills = this.getSkillItems();
-		const hooks = this.getHookItems();
+		const hooks = await this.getHookItems();
 		const plugins = this.getPluginItems();
 
 		this.logService.debug(`[CopilotCLICustomizationProvider] agents (${agents.length}): ${agents.map(a => a.name).join(', ') || '(none)'}`);
@@ -199,12 +223,62 @@ export class CopilotCLICustomizationProvider extends Disposable implements vscod
 	 * Collects all hook items from the prompt file service.
 	 * Each item is a hook configuration file (JSON).
 	 */
-	private getHookItems(): vscode.ChatSessionCustomizationItem[] {
-		return this.chatPromptFileService.hooks.map(h => ({
-			uri: h.uri,
-			type: vscode.ChatSessionCustomizationType.Hook,
-			name: basename(h.uri).replace(/\.json$/i, ''),
-		}));
+	private async getHookItems(): Promise<vscode.ChatSessionCustomizationItem[]> {
+		const items: vscode.ChatSessionCustomizationItem[] = [];
+
+		// Source 1: hooks from VS Code core (vscode.chat.hooks)
+		for (const h of (this.chatPromptFileService.hooks ?? [])) {
+			items.push({
+				uri: h.uri,
+				type: vscode.ChatSessionCustomizationType.Hook,
+				name: basename(h.uri).replace(/\.json$/i, ''),
+			});
+		}
+
+		// Source 2: hooks from .claude/settings.json (matching ClaudeCustomizationProvider)
+		const settingsPaths = this.getSettingsFilePaths();
+		for (const settingsUri of settingsPaths) {
+			try {
+				const content = await this.fileSystemService.readFile(settingsUri);
+				const settings: HooksSettings = JSON.parse(new TextDecoder().decode(content));
+				if (!settings.hooks) {
+					continue;
+				}
+
+				for (const eventId of HOOK_EVENT_IDS) {
+					const matchers = settings.hooks[eventId];
+					if (!matchers || matchers.length === 0) {
+						continue;
+					}
+
+					for (const matcher of matchers) {
+						for (const hook of matcher.hooks) {
+							const matcherLabel = matcher.matcher === '*' ? '' : ` (${matcher.matcher})`;
+							items.push({
+								uri: settingsUri,
+								type: vscode.ChatSessionCustomizationType.Hook,
+								name: `${eventId}${matcherLabel}`,
+								description: hook.command,
+							});
+						}
+					}
+				}
+			} catch {
+				// Settings file doesn't exist or is invalid — skip
+			}
+		}
+
+		return items;
+	}
+
+	private getSettingsFilePaths(): URI[] {
+		const paths: URI[] = [];
+		for (const folder of this.workspaceService.getWorkspaceFolders()) {
+			paths.push(URI.joinPath(folder, '.claude', 'settings.json'));
+			paths.push(URI.joinPath(folder, '.claude', 'settings.local.json'));
+		}
+		paths.push(URI.file(os.homedir() + '/.claude/settings.json'));
+		return paths;
 	}
 
 	/**	 * Collects all plugin items from the prompt file service.
