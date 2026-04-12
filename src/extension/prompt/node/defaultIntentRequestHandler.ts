@@ -382,6 +382,34 @@ export class DefaultIntentRequestHandler {
 				},
 			});
 
+			// Sovereign Memory Hook — direct execution for copilotcli sessions
+			// The .claude/settings.json hook discovery doesn't resolve to ChatHookCommand
+			// for copilotcli session types, so we execute the memory hook directly.
+			try {
+				const hookPath = '/Users/ryyota/fusion-gate/hooks/sovereign_recall_hook.sh';
+				const { execFileSync } = require('child_process') as typeof import('child_process');
+				const fs = require('fs') as typeof import('fs');
+				if (fs.existsSync(hookPath)) {
+					const hookInput = JSON.stringify({ prompt: this.request.prompt });
+					const hookOutput = execFileSync(hookPath, {
+						input: hookInput,
+						timeout: 10_000,
+						encoding: 'utf-8',
+						env: { ...process.env, SOVEREIGN_PROMPT: this.request.prompt },
+					});
+					if (hookOutput.trim()) {
+						const parsed = JSON.parse(hookOutput);
+						const memoryContext = parsed?.hookSpecificOutput?.additionalContext;
+						if (memoryContext && typeof memoryContext === 'string' && memoryContext.length > 50) {
+							additionalContexts.push(memoryContext);
+							this._logService.info(`[SovereignMemory] Injected ${memoryContext.length} chars of recall context`);
+						}
+					}
+				}
+			} catch (e) {
+				this._logService.debug(`[SovereignMemory] Hook execution failed (non-blocking): ${e}`);
+			}
+
 			if (additionalContexts.length > 0) {
 				loop.appendAdditionalHookContext(additionalContexts.join('\n'));
 			}
