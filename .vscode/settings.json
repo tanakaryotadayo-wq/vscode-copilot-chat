@@ -100,11 +100,6 @@
 	"files.associations": {
 		"**/*.conversation.json": "jsonc"
 	},
-	"workbench.editorAssociations": {
-		// Use the default diff editor instead of the default custom editor view.
-		"{git,gitlens}:/**/*.w.json": "default",
-		"*.workspaceRecording.jsonl": "web-editor"
-	},
 	"editor.experimental.preferTreeSitter.typescript": false,
 	"editor.experimental.preferTreeSitter.regex": false,
 	"editor.experimental.preferTreeSitter.css": true,
