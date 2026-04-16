@@ -27,6 +27,25 @@
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "fusionHarvest",
+          "title": "Semantic Harvest",
+          "icon": "$(pulse)"
+        }
+      ]
+    },
+    "views": {
+      "fusionHarvest": [
+        {
+          "id": "fusionHarvestExplorer",
+          "name": "Neural Packets",
+          "icon": "$(database)",
+          "contextualTitle": "Semantic Harvest"
+        }
+      ]
+    },
     "chatParticipants": [
       {
         "id": "fusion.copilot",
@@ -109,6 +128,17 @@
         "command": "fusion.copilot.peSimulator",
         "title": "Fusion: ⚖️ Perfect Equilibrium Simulator",
         "category": "Fusion Copilot"
+      },
+      {
+        "command": "fusion.harvest.now",
+        "title": "Fusion: Harvest Current File",
+        "category": "Semantic Harvest",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "fusion.harvest.showSymbolInfo",
+        "title": "Fusion: Show Symbol Harvest Info",
+        "category": "Semantic Harvest"
       }
     ],
     "configuration": {
@@ -174,6 +204,31 @@
           "type": "boolean",
           "default": true,
           "description": "Enable fusion-gate MCP tool integration"
+        },
+        "fusion.harvest.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable Semantic Harvest (auto-extract symbols on save)"
+        },
+        "fusion.harvest.enableCallGraph": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable call graph extraction (heavier, uses LSP Call Hierarchy)"
+        },
+        "fusion.harvest.debounceMs": {
+          "type": "number",
+          "default": 1000,
+          "description": "Debounce interval before triggering harvest after save (ms)"
+        },
+        "fusion.harvest.sidecarHost": {
+          "type": "string",
+          "default": "localhost",
+          "description": "Hostname for the Newgate sidecar daemons"
+        },
+        "fusion.harvest.codeLensEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show Semantic Diff CodeLens above changed symbols"
         }
       }
     }

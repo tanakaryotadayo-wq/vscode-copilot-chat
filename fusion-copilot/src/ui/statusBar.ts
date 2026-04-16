@@ -16,9 +16,16 @@ export interface PEStatusData {
 	step_count: number;
 }
 
+export interface HarvestStatusData {
+	harvestCount: number;
+	lastDrift: number;
+	status: 'idle' | 'harvesting' | 'error';
+}
+
 export class FusionStatusBar {
 	private readonly item: vscode.StatusBarItem;
 	private readonly peItem: vscode.StatusBarItem;
+	private readonly harvestItem: vscode.StatusBarItem;
 	private disposed = false;
 
 	constructor() {
@@ -33,6 +40,13 @@ export class FusionStatusBar {
 		this.peItem.tooltip = '⚖️ Perfect Equilibrium — Hallucination Control';
 		this.peItem.text = '⚖️ PE: IDLE';
 		this.peItem.show();
+
+		// Harvest Status Bar (to the right of PE)
+		this.harvestItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 98);
+		this.harvestItem.command = 'fusion.harvest.now';
+		this.harvestItem.tooltip = '🌾 Semantic Harvest — Click to harvest current file';
+		this.harvestItem.text = '🌾 Harvest: 0';
+		this.harvestItem.show();
 	}
 
 	/** Show loading state */
@@ -107,6 +121,31 @@ export class FusionStatusBar {
 		}
 	}
 
+	/** Update harvest metrics in the status bar */
+	updateHarvest(data: HarvestStatusData): void {
+		if (this.disposed) { return; }
+
+		const driftStr = data.lastDrift > 0 ? ` Δ${(data.lastDrift * 100).toFixed(1)}%` : '';
+
+		if (data.status === 'harvesting') {
+			this.harvestItem.text = `$(loading~spin) Harvesting...`;
+			this.harvestItem.backgroundColor = undefined;
+		} else if (data.status === 'error') {
+			this.harvestItem.text = `🌾 Harvest: ERR`;
+			this.harvestItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
+		} else {
+			this.harvestItem.text = `🌾 ${data.harvestCount}${driftStr}`;
+			this.harvestItem.backgroundColor = undefined;
+		}
+
+		this.harvestItem.tooltip = [
+			'🌾 Semantic Harvest',
+			`Packets harvested: ${data.harvestCount}`,
+			`Last drift: ${(data.lastDrift * 100).toFixed(2)}%`,
+			'Click to harvest current file',
+		].join('\n');
+	}
+
 	/** Set a temporary status message */
 	flash(message: string, durationMs: number = 3000): void {
 		const prev = this.item.text;
@@ -120,5 +159,6 @@ export class FusionStatusBar {
 		this.disposed = true;
 		this.item.dispose();
 		this.peItem.dispose();
+		this.harvestItem.dispose();
 	}
 }

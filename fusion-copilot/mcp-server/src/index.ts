@@ -23,6 +23,7 @@
  *   pe_configure                    — Configure PE engine (model presets / custom e, C_ψ)
  *   pe_step                         — Record a reasoning step + audit
  *   pe_status                       — Get current PE session status + history
+ *   dual_umpire_audit               — Parallel cross-vendor audit (Gemini 3 Flash + Copilot GPT-5 mini)
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -992,6 +993,86 @@ server.tool(
         lines.push(`${e} Step ${h.step}: P=${h.p_hall} limit=${h.p_limit} C_ψ_eff=${h.c_psi_effective} w=${h.weight} ${h.audit_result ?? ''}`);
       }
     }
+    return { content: [{ type: 'text', text: lines.join('\n') }] };
+  },
+);
+
+// ── Dual Umpire Audit ───────────────────────────────────────────────────────
+
+server.tool(
+  'dual_umpire_audit',
+  'Run parallel cross-vendor code audit using Gemini 3 Flash + Copilot GPT-5 mini. Returns independent verdicts from both umpires for PE external verification layer.',
+  {
+    code: z.string().describe('Code diff or code snippet to audit'),
+    context: z.string().optional().describe('Optional context about what the code should do'),
+    verdict_only: z.boolean().optional().describe('If true, return only PASS/FAIL verdicts (default: false)'),
+  },
+  async ({ code, context, verdict_only }) => {
+    const auditPrompt = [
+      'You are a code auditor. Review the following code for bugs, logic errors, security issues, and correctness.',
+      context ? `Context: ${context}` : '',
+      'Code:',
+      '```',
+      code,
+      '```',
+      verdict_only
+        ? 'Respond with exactly one word: PASS or FAIL. Nothing else.'
+        : 'Give a one-paragraph verdict: is this code correct? List any issues found. End with VERDICT: PASS or VERDICT: FAIL.',
+    ].filter(Boolean).join('\n');
+
+    const startTime = Date.now();
+
+    // Fire both umpires in parallel
+    const [geminiResult, copilotResult] = await Promise.all([
+      // Umpire 1: Gemini 3 Flash (run from clean dir to avoid MCP overhead)
+      runCommand('bash', ['-c', `cd /tmp && gemini -m gemini-3-flash-preview -p ${JSON.stringify(auditPrompt)} -o text 2>/dev/null`]),
+
+      // Umpire 2: Copilot GPT-5 mini (run from clean dir)
+      runCommand('bash', ['-c', `cd /tmp && copilot --model gpt-5-mini -p ${JSON.stringify(auditPrompt)} 2>/dev/null`]),
+    ]);
+
+    const elapsed = Date.now() - startTime;
+
+    // Parse verdicts
+    const parseVerdict = (output: string): 'PASS' | 'FAIL' | 'UNKNOWN' => {
+      const upper = output.toUpperCase();
+      if (upper.includes('VERDICT: PASS') || upper.trim() === 'PASS') return 'PASS';
+      if (upper.includes('VERDICT: FAIL') || upper.trim() === 'FAIL') return 'FAIL';
+      return 'UNKNOWN';
+    };
+
+    const geminiVerdict = parseVerdict(geminiResult.stdout);
+    const copilotVerdict = parseVerdict(copilotResult.stdout);
+
+    // Consensus logic: both must PASS for overall PASS
+    const consensus =
+      geminiVerdict === 'PASS' && copilotVerdict === 'PASS' ? 'PASS' :
+      geminiVerdict === 'FAIL' || copilotVerdict === 'FAIL' ? 'FAIL' :
+      'REVIEW_NEEDED';
+
+    const lines = [
+      '# 🏛️ Dual Umpire Audit Result',
+      '',
+      `| Umpire | Model | Verdict | Status |`,
+      `|--------|-------|---------|--------|`,
+      `| Gemini | 3-flash-preview | **${geminiVerdict}** | ${geminiResult.success ? '✅' : '❌ Error'} |`,
+      `| Copilot | GPT-5-mini | **${copilotVerdict}** | ${copilotResult.success ? '✅' : '❌ Error'} |`,
+      '',
+      `**Consensus: ${consensus}** (${(elapsed / 1000).toFixed(1)}s parallel)`,
+      '',
+    ];
+
+    if (!verdict_only) {
+      lines.push(
+        '---',
+        '### Gemini 3 Flash Analysis',
+        geminiResult.success ? geminiResult.stdout.trim() : `Error: ${geminiResult.stderr}`,
+        '',
+        '### Copilot GPT-5 mini Analysis',
+        copilotResult.success ? copilotResult.stdout.trim() : `Error: ${copilotResult.stderr}`,
+      );
+    }
+
     return { content: [{ type: 'text', text: lines.join('\n') }] };
   },
 );

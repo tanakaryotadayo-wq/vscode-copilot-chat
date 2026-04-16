@@ -13,6 +13,7 @@ import { Orchestrator } from './orchestrator/agentOrchestrator.js';
 import { createInlineHandler } from './inline/ghostTextProvider.js';
 import { AutoHealer } from './autonomy/autoHealer.js';
 import { PEPanel } from './ui/pePanel.js';
+import { SidecarClient, HarvestEngine, PacketExplorer, SemanticDiffLensProvider } from './harvest/index.js';
 
 const EXTENSION_ID = 'fusion.copilot';
 const OUTPUT_CHANNEL_NAME = 'Fusion Copilot';
@@ -24,6 +25,7 @@ let coderClient: LocalAiClient;
 let geminiClient: GeminiClient;
 let mcpBridge: McpBridge;
 let orchestrator: Orchestrator;
+let harvestEngine: HarvestEngine;
 let healthCheckInterval: ReturnType<typeof setInterval> | undefined;
 
 // ── Logging ─────────────────────────────────────────────────────────────────
@@ -121,6 +123,39 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	const autoHealer = new AutoHealer(coderClient, orchestrator);
 	autoHealer.activate(context);
 
+	// ── Semantic Harvest Engine ────────────────────────────────────────────
+	const sidecar = new SidecarClient();
+	harvestEngine = new HarvestEngine(sidecar, {
+		includedLanguages: [],  // all languages
+		enableCallGraph: false, // enable via setting later
+		log,
+	});
+	harvestEngine.activate(context);
+	context.subscriptions.push(harvestEngine);
+
+	// Packet Explorer TreeView (sidebar)
+	const packetExplorer = new PacketExplorer(harvestEngine);
+	packetExplorer.register(context);
+	context.subscriptions.push(packetExplorer);
+
+	// Semantic Diff CodeLens
+	const semanticDiffLens = new SemanticDiffLensProvider(harvestEngine);
+	semanticDiffLens.register(context);
+	context.subscriptions.push(semanticDiffLens);
+
+	log('Semantic Harvest subsystem activated');
+
+	// Wire harvest events → StatusBar updates
+	harvestEngine.onDidHarvest(event => {
+		const stats = harvestEngine.getStats();
+		statusBar.updateHarvest({
+			harvestCount: stats.harvestCount,
+			lastDrift: 0,  // Enhanced when sidecar returns drift
+			status: 'idle',
+		});
+		log(`[harvest] StatusBar updated: ${stats.harvestCount} packets, ${stats.trackedFiles} files`);
+	});
+
 	// Status bar
 	statusBar = new FusionStatusBar();
 	context.subscriptions.push({ dispose: () => statusBar.dispose() });
@@ -156,6 +191,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		vscode.commands.registerCommand('fusion.copilot.orchestrate', orchestrateFromPalette),
 		vscode.commands.registerCommand('fusion.copilot.nightMode', nightModeFromPalette),
 		vscode.commands.registerCommand('fusion.copilot.peSimulator', () => PEPanel.createOrShow(context.extensionUri)),
+		vscode.commands.registerCommand('fusion.harvest.now', () => harvestEngine.harvestActiveDocument()),
+		vscode.commands.registerCommand('fusion.harvest.showSymbolInfo', showSymbolInfo),
 	);
 
 	// Periodic health check (every 30s)
@@ -525,6 +562,26 @@ async function runHealthCheck(): Promise<void> {
 	} catch (err) {
 		log(`Health check error: ${err}`);
 	}
+}
+
+// ── Harvest Commands ────────────────────────────────────────────────────────
+
+async function showSymbolInfo(filePath: string, symbolName: string): Promise<void> {
+	const state = harvestEngine.getFileState(filePath);
+	if (!state) {
+		vscode.window.showInformationMessage(`No harvest data for ${symbolName}`);
+		return;
+	}
+
+	const info = [
+		`Symbol: ${symbolName}`,
+		`File: ${filePath}`,
+		`Content hash: ${state.lastHash}`,
+		`Last harvest: ${new Date(state.lastHarvestTime).toLocaleString()}`,
+		`Tracked symbols: ${state.lastSymbolNames.join(', ')}`,
+	].join('\n');
+
+	vscode.window.showInformationMessage(info, { modal: true });
 }
 
 // ── Deactivation ────────────────────────────────────────────────────────────

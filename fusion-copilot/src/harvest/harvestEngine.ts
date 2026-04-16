@@ -1,24 +1,15 @@
 /*---------------------------------------------------------------------------------------------
- *  Semantic Harvest — Harvest Engine
- *  The core "二重人格" driver: every save triggers meaning extraction.
- *
- *  Pipeline: onDidSave → extractSymbols → extractDeps → computeHash →
- *            diffWithPrevious → submitToSidecar → updateUI
- *
- *  Design principles:
- *  - Extension is thin: extract + transform only
- *  - Sidecar is thick: vectorize + store + drift-detect
- *  - Debounce saves to avoid flooding
- *  - Degrade gracefully if sidecar is offline
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
 import * as vscode from 'vscode';
-import { SidecarClient, type HarvestPayload, type SemanticDeltaPayload, type CallEdge } from './sidecarClient.js';
+import { SidecarClient, type CallEdge, type HarvestPayload, type SemanticDeltaPayload } from './sidecarClient.js';
 import {
-	extractSymbols,
+	computeContentHash,
 	extractCallGraph,
 	extractDependencies,
-	computeContentHash,
+	extractSymbols,
 } from './symbolExtractor.js';
 
 export interface HarvestEngineOptions {
