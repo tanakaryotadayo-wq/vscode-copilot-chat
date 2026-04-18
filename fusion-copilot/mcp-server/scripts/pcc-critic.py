@@ -10,6 +10,8 @@ Usage:
   pcc-critic --runtime copilot --model gpt-5-mini --preset 探 "設計を分析しろ"
   pcc-critic --runtime claude --model claude-opus "この設計をレビューしろ"
   pcc-critic --preset 極 "このコードをレビューしろ"
+  pcc-critic --preset 探,監,刃 "この変更を単発で厚くレビューしろ"
+  pcc-critic --preset all --model fast "この設計を多層で検証しろ"
   cat code.py | pcc-critic --preset 極 "このコードの問題点は？"
 
 Runtimes: gemini (default), claude, copilot
@@ -25,6 +27,7 @@ import argparse
 import json
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import time
@@ -94,13 +97,21 @@ PCC_PRESETS = {
     },
 }
 
+PRESET_ALIASES = {
+    "all": ["探", "極", "均", "監", "刃"],
+    "full": ["探", "極", "均", "監", "刃"],
+    "5mode": ["探", "極", "均", "監", "刃"],
+    "layered": ["探", "極", "均", "監", "刃"],
+}
+
 
 # ─── Routing Table ───────────────────────────────────────────────────────────
 
 MODEL_ROUTING = {
     # Gemini
-    "fast":   "gemini-2.5-flash",
-    "standard": "gemini-2.5-pro",
+    "fast":   "gemini-3.1-flash-lite-preview",
+    "standard": "gemini-3-flash-preview",
+    "plan":   "gemini-3.1-pro-preview",
     "deep":   "gemini-3.1-pro-preview",
     # Claude
     "claude-sonnet": "claude-sonnet-4-6",
@@ -131,12 +142,105 @@ def load_model_routing() -> dict:
 
 # ─── Core ────────────────────────────────────────────────────────────────────
 
-def inject_pcc(prompt: str, preset: str) -> str:
+def normalize_preset_spec(preset_spec: str) -> list[str]:
+    """単一 preset / カンマ区切り / alias を正規化する"""
+    spec = (preset_spec or "探").strip()
+    if not spec:
+        return ["探"]
+
+    raw_tokens = []
+    for chunk in spec.replace("+", ",").split(","):
+        token = chunk.strip()
+        if not token:
+            continue
+        raw_tokens.append(token)
+
+    expanded: list[str] = []
+    for token in raw_tokens or ["探"]:
+        alias = PRESET_ALIASES.get(token.lower())
+        if alias:
+            expanded.extend(alias)
+            continue
+        if token not in PCC_PRESETS:
+            valid = ", ".join(list(PCC_PRESETS.keys()) + list(PRESET_ALIASES.keys()))
+            raise ValueError(f"Unknown preset '{token}'. Valid presets: {valid}")
+        expanded.append(token)
+
+    deduped: list[str] = []
+    seen = set()
+    for preset in expanded:
+        if preset not in seen:
+            seen.add(preset)
+            deduped.append(preset)
+    return deduped or ["探"]
+
+
+def inject_multi_pcc(prompt: str, presets: list[str], runtime: str) -> str:
+    """単発ランタイム向けに複数 preset を1リクエストへ束ねる"""
+    header = " + ".join(f"#{preset}" for preset in presets)
+    pass_blocks = []
+    for index, preset in enumerate(presets, start=1):
+        config = PCC_PRESETS[preset]
+        constraints = "\n".join(f"    - {constraint}" for constraint in config["constraints"])
+        output_fmt = config.get("output_format")
+        output_hint = f"\n    - Output bias: {output_fmt}" if output_fmt else ""
+        pass_blocks.append(
+            f"""{index}. {config['label']}
+{constraints}{output_hint}"""
+        )
+
+    runtime_strategy = [
+        "This is a single-request execution. Perform every mode pass within one completion.",
+        "Build one shared fact base first, then run each mode against the same facts.",
+        "Do not ask for a follow-up turn unless the task is impossible without external data.",
+        "If modes disagree, surface the disagreement explicitly instead of hiding it.",
+    ]
+    if runtime == "gemini":
+        runtime_strategy.append(
+            "Optimize for one-shot depth: reuse the same context across all passes and spend tokens on synthesis, not repetition."
+        )
+
+    runtime_block = "\n".join(f"  - {line}" for line in runtime_strategy)
+    mode_block = "\n\n".join(pass_blocks)
+
+    return f"""[PCC Protocol Bundle: {header}]
+Single-shot runtime strategy:
+{runtime_block}
+
+Task:
+{prompt}
+
+Mode passes (execute all):
+{mode_block}
+
+Global synthesis rules:
+  - Shared facts/evidence must be stated once and reused across all mode passes.
+  - Distinguish confirmed evidence from assumptions.
+  - Keep the audit conservative when evidence is missing.
+  - Final recommendation must cite which modes support it.
+  - Prefer dense output over conversational filler.
+
+Output format (MANDATORY):
+1. 共通事実 (Shared facts / evidence)
+2. モード別分析
+   - 探
+   - 極
+   - 均
+   - 監
+   - 刃
+3. 一致点 (Consensus)
+4. 相違点 (Disagreements)
+5. 最終推奨 (Final recommendation)
+6. 不足証拠 / 次アクション (Missing evidence / next action)
+"""
+
+def inject_pcc(prompt: str, presets: list[str], runtime: str) -> str:
     """PCC 制約プロトコルを prompt に注入する"""
-    config = PCC_PRESETS.get(preset)
-    if not config:
-        print(f"[PCC] Unknown preset: {preset}, falling back to #探", file=sys.stderr)
-        config = PCC_PRESETS["探"]
+    if len(presets) > 1:
+        return inject_multi_pcc(prompt, presets, runtime)
+
+    preset = presets[0]
+    config = PCC_PRESETS[preset]
 
     constraints = "\n".join(f"  - {c}" for c in config["constraints"])
     output_fmt = config.get("output_format", "")
@@ -150,19 +254,73 @@ Constraints:
 {prompt}"""
 
 
+def _prepend_path(env: dict, entries: list[str]) -> None:
+    """PATH に既存順序を保ったまま候補を前置する"""
+    current = [part for part in env.get("PATH", "").split(os.pathsep) if part]
+    merged = []
+    seen = set()
+    for path in entries + current:
+        if path and path not in seen:
+            seen.add(path)
+            merged.append(path)
+    env["PATH"] = os.pathsep.join(merged)
+
+
+def _resolve_nvm_bin(bin_name: str) -> str | None:
+    """nvm 管理下にある実行ファイルを静かに探索する"""
+    nvm_sh = pathlib.Path.home() / ".nvm" / "nvm.sh"
+    if not nvm_sh.exists():
+        return None
+    try:
+        probe = subprocess.run(
+            [
+                "bash",
+                "-lc",
+                f"source '{nvm_sh}' >/dev/null 2>&1 && command -v {bin_name}",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            cwd=os.path.expanduser("~"),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    candidate = probe.stdout.strip().splitlines()
+    return candidate[-1] if probe.returncode == 0 and candidate else None
+
+
+def _resolve_gemini_runtime() -> tuple[dict, str]:
+    """Gemini CLI 実行に使う env と binary を解決する"""
+    env = os.environ.copy()
+    homebrew_candidates = ["/opt/homebrew/bin", "/usr/local/bin"]
+    _prepend_path(env, [path for path in homebrew_candidates if os.path.isdir(path)])
+
+    explicit_bin = env.get("GEMINI_BIN", "").strip()
+    if explicit_bin:
+        gemini_bin = explicit_bin
+    else:
+        gemini_bin = shutil.which("gemini", path=env.get("PATH"))
+
+    if gemini_bin:
+        return env, gemini_bin
+
+    nvm_node = _resolve_nvm_bin("node")
+    nvm_gemini = _resolve_nvm_bin("gemini")
+    extra_entries = []
+    if nvm_node:
+        extra_entries.append(os.path.dirname(nvm_node))
+    if nvm_gemini:
+        extra_entries.append(os.path.dirname(nvm_gemini))
+        gemini_bin = nvm_gemini
+    if extra_entries:
+        _prepend_path(env, extra_entries)
+
+    return env, gemini_bin or "gemini"
+
+
 def run_gemini(enriched_prompt: str, model: str, timeout: int = 120) -> dict:
     """Gemini CLI headless で実行し結果を返す"""
-    env = os.environ.copy()
-    nvm_dir = os.path.expanduser("~/.nvm")
-    node_path = os.popen(
-        f'bash -c "source {nvm_dir}/nvm.sh && nvm which node 2>/dev/null"'
-    ).read().strip()
-    if node_path:
-        env['PATH'] = f"{os.path.dirname(node_path)}:{env.get('PATH', '')}"
-
-    gemini_bin = "/opt/homebrew/bin/gemini"
-    if not os.path.exists(gemini_bin):
-        gemini_bin = "gemini"
+    env, gemini_bin = _resolve_gemini_runtime()
 
     t0 = time.monotonic()
     try:
@@ -335,13 +493,18 @@ Runtimes:
   copilot  GitHub Copilot CLI
 
 Models:
-  fast           gemini-2.5-flash
-  standard       gemini-2.5-pro
-  deep           gemini-3.1-pro-preview（デフォルト）
+  fast           gemini-3.1-flash-lite-preview
+  standard       gemini-3-flash-preview
+  plan           gemini-3.1-pro-preview
+  deep           gemini-3.1-pro-preview（互換 alias）
   claude-sonnet  claude-sonnet-4-6
   claude-opus    claude-opus-4-6
   copilot-mini   gpt-5-mini
   copilot-pro    gpt-5.2
+
+Preset bundles:
+  all/full/5mode/layered   探,極,均,監,刃 を単発でまとめて実行
+  探,監,刃                 カンマ区切りで任意の多層指定
 
 Examples:
   pcc-critic "この設計の弱点は？"
@@ -351,10 +514,10 @@ Examples:
         """,
     )
     parser.add_argument("prompt", nargs="?", help="プロンプト（stdinからも読める）")
-    parser.add_argument("--preset", "-P", default="探", choices=PCC_PRESETS.keys(),
-                        help="PCC プリセット（デフォルト: 探）")
+    parser.add_argument("--preset", "-P", default="探",
+                        help="PCC プリセット。単体(探) / カンマ区切り(探,監,刃) / alias(all)")
     parser.add_argument("--model", "-m", default="deep",
-                        help="モデル名 or ショートカット (fast/standard/deep/claude-*/copilot-*)")
+                        help="モデル名 or ショートカット (fast/standard/plan/deep/claude-*/copilot-*)")
     parser.add_argument("--timeout", "-t", type=int, default=120, help="タイムアウト秒")
     parser.add_argument("--json", "-j", action="store_true", help="JSON 出力")
     parser.add_argument("--max-input-chars", type=int, default=100000,
@@ -393,15 +556,24 @@ Examples:
     if not prompt:
         parser.error("プロンプトを指定するか、stdin からパイプしてください")
 
+    try:
+        presets = normalize_preset_spec(args.preset)
+    except ValueError as exc:
+        parser.error(str(exc))
+
     # モデル解決（設定ファイル対応）
     routing = load_model_routing()
     model = routing.get(args.model, args.model)
 
     # PCC 注入
-    enriched = inject_pcc(prompt, args.preset)
+    enriched = inject_pcc(prompt, presets, args.runtime)
+    preset_label = ",".join(presets)
 
     if not args.json:
-        print(f"[ACP×CLI×PCC] Preset: #{args.preset} → {PCC_PRESETS[args.preset]['label']}")
+        if len(presets) == 1:
+            print(f"[ACP×CLI×PCC] Preset: #{preset_label} → {PCC_PRESETS[presets[0]]['label']}")
+        else:
+            print(f"[ACP×CLI×PCC] Preset bundle: {preset_label} (single-shot layered synthesis)")
         print(f"[Runtime] {args.runtime}")
         print(f"[Model] {model}")
         print(f"[Prompt] {len(enriched)} chars")
@@ -421,7 +593,8 @@ Examples:
     if args.json:
         output = {
             "runtime": args.runtime,
-            "pcc_preset": args.preset,
+            "pcc_preset": preset_label,
+            "pcc_presets": presets,
             "model": model,
             "response": result["text"],
             "elapsed": result["elapsed"],

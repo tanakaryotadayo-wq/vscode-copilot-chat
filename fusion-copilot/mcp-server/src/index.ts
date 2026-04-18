@@ -68,7 +68,7 @@ function runCommand(
   });
 }
 
-function resolveRepoContext(repo?: string): { repoValue: string; cwd?: string; ghRepo?: string } {
+export function resolveRepoContext(repo?: string): { repoValue: string; cwd?: string; ghRepo?: string } {
   const repoValue = repo?.trim() || '.';
   if (repoValue !== '.' && existsSync(repoValue)) {
     return { repoValue, cwd: repoValue };
@@ -144,7 +144,7 @@ interface PEStepRecord {
   timestamp: string;
 }
 
-class PerfectEquilibriumEngine {
+export class PerfectEquilibriumEngine {
   private e: number;
   private c_psi_base: number;           // nominal C_ψ (from preset)
   private p_hall: number = 0.0;
@@ -197,13 +197,26 @@ class PerfectEquilibriumEngine {
 
   /**
    * FIX-1: Dynamic C_ψ — degrades under output complexity.
-   * C_ψ_eff = C_ψ_base × (1 / (1 + complexity_factor))
-   * High token counts / multi-file edits lower the effective audit power,
-   * reflecting that Vector Proxy has harder time catching sophisticated bugs.
+   * IF layer_scores is provided, calculates:
+   *   C_ψ = 1 - (1-L0)(1-L1)(1-L2)(1-L3)(1-L4)
+   * Otherwise falls back to the static preset C_ψ_base.
+   * In both cases, applies complexity degradation and karma.
    */
-  private effectiveCpsi(complexity: number): number {
+  private effectiveCpsi(
+    complexity: number,
+    layer_scores?: { l0?: number; l1?: number; l2?: number; l3?: number; l4?: number },
+  ): number {
+    let base_cpsi = this.c_psi_base;
+    if (layer_scores) {
+      const l0 = layer_scores.l0 ?? 0;
+      const l1 = layer_scores.l1 ?? 0;
+      const l2 = layer_scores.l2 ?? 0;
+      const l3 = layer_scores.l3 ?? 0;
+      const l4 = layer_scores.l4 ?? 0;
+      base_cpsi = 1 - ((1 - l0) * (1 - l1) * (1 - l2) * (1 - l3) * (1 - l4));
+    }
     const degradation = 1 / (1 + complexity * 0.1);
-    return this.c_psi_base * degradation * this.karma; // FIX-4: karma further dampens
+    return base_cpsi * degradation * this.karma; // FIX-4: karma further dampens
   }
 
   /** Theoretical limit at given error rate and effective C_ψ */
@@ -227,6 +240,7 @@ class PerfectEquilibriumEngine {
     auditResult?: 'PASS' | 'FAIL',
     weight: number = 1,
     complexity: number = 0,
+    layer_scores?: { l0?: number; l1?: number; l2?: number; l3?: number; l4?: number },
   ): PEStepRecord {
     weight = Math.max(1, Math.round(weight));
     complexity = Math.max(0, Math.min(10, complexity));
@@ -240,8 +254,8 @@ class PerfectEquilibriumEngine {
       this.p_hall = this.p_hall + (1 - this.p_hall) * e_current;
     }
 
-    // FIX-1: Dynamic C_ψ based on complexity
-    const c_psi_eff = this.effectiveCpsi(complexity);
+    // FIX-1: Dynamic C_ψ based on complexity + VP layer scores
+    const c_psi_eff = this.effectiveCpsi(complexity, layer_scores);
 
     // ψ layer: audit correction (uses effective C_ψ, not base)
     this.p_hall = (1 - c_psi_eff) * this.p_hall;
@@ -870,8 +884,8 @@ server.tool(
   'Run ACP×CLI×PCC DEEPTHINK for architecture/design analysis. Routes through any installed CLI (gemini/claude/copilot) with PCC constraint injection + sycophancy audit.',
   {
     prompt: z.string().describe('Architecture or design question to analyze deeply'),
-    preset: z.string().optional().describe('PCC preset: 探/極/均/監/刃 (default: 刃 for deepthink)'),
-    model: z.string().optional().describe('Model: fast/standard/deep/claude-sonnet/claude-opus/copilot-mini/copilot-pro (default: deep)'),
+    preset: z.string().optional().describe('PCC preset: 探/極/均/監/刃, comma-separated bundle (探,監,刃), or alias all/full/5mode/layered (default: 刃 for deepthink)'),
+    model: z.string().optional().describe('Model: fast/standard/plan/deep/claude-sonnet/claude-opus/copilot-mini/copilot-pro (default: deep)'),
     runtime: z.string().optional().describe('Runtime: gemini, claude, or copilot (default: gemini)'),
   },
   async ({ prompt, preset, model, runtime }) => {
@@ -893,8 +907,8 @@ server.tool(
   'Run ACP×CLI×PCC DEEPSEARCH for technical research. Routes through any installed CLI (gemini/claude/copilot) with PCC constraint injection + sycophancy audit.',
   {
     query: z.string().describe('Technical research query'),
-    preset: z.string().optional().describe('PCC preset: 探/極/均/監/刃 (default: 探 for deepsearch)'),
-    model: z.string().optional().describe('Model: fast/standard/deep/claude-sonnet/claude-opus/copilot-mini/copilot-pro (default: deep)'),
+    preset: z.string().optional().describe('PCC preset: 探/極/均/監/刃, comma-separated bundle (探,監,刃), or alias all/full/5mode/layered (default: 探 for deepsearch)'),
+    model: z.string().optional().describe('Model: fast/standard/plan/deep/claude-sonnet/claude-opus/copilot-mini/copilot-pro (default: deep)'),
     runtime: z.string().optional().describe('Runtime: gemini, claude, or copilot (default: gemini)'),
   },
   async ({ query, preset, model, runtime }) => {
@@ -1066,13 +1080,20 @@ server.tool(
       .describe('FIX-2: Number of internal reasoning steps this call represents. Default 1. Use >1 for chain-of-thought or multi-file edits.'),
     complexity: z.number().min(0).max(10).optional()
       .describe('FIX-1: Output complexity (0=trivial, 10=massive multi-file change). Degrades effective C_ψ.'),
+    layer_scores: z.object({
+      l0: z.number().min(0).max(1).optional().describe('L0 Crust (regex/AST) score'),
+      l1: z.number().min(0).max(1).optional().describe('L1 Moon (intent anchoring) score'),
+      l2: z.number().min(0).max(1).optional().describe('L2 Sun (task context) score'),
+      l3: z.number().min(0).max(1).optional().describe('L3 North Star (architecture) score'),
+      l4: z.number().min(0).max(1).optional().describe('L4 Black Hole (drift detection) score'),
+    }).optional().describe('Dynamic C_ψ scores from Vector Proxy layers. Overrides static preset.'),
     note: z.string().optional().describe('Optional note about what this step did'),
     mutation: z.boolean().optional()
       .describe('VORTEX PROTOCOL: Set to true if this step modified files or system state. Engages UNVERIFIED_MUTATION lock.'),
     verification_exit_code: z.number().optional()
       .describe('VORTEX PROTOCOL: Exit code of the verification/test command. 0 unlocks the system.'),
   },
-  async ({ audit_result, weight, complexity, note, mutation, verification_exit_code }) => {
+  async ({ audit_result, weight, complexity, layer_scores, note, mutation, verification_exit_code }) => {
     // VORTEX Protocol Logics — use engageLock/releaseLock for proper state tracking
     if (mutation === true) {
       peEngine.engageLock('pe_step:mutation');
@@ -1090,6 +1111,7 @@ server.tool(
       audit_result as 'PASS' | 'FAIL' | undefined,
       weight ?? 1,
       complexity ?? 0,
+      layer_scores,
     );
     const statusEmoji = {
       STABLE: '🟢', COLLAPSED: '🔴', EVOLVING: '🟡', SABOTAGE_DETECTED: '🚨',
