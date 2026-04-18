@@ -4,7 +4,7 @@
  * Fusion Orchestrator v2 MCP Server
  * ====================================
  * Full AI orchestration toolkit: Jules, ACP×CLI×PCC, Qwen Farm, Qwen Coder, n8n
- * + Perfect Equilibrium (完全平衡体) hallucination control engine
+ * + Perfect Balance (完全平衡体) hallucination control engine
  *
  * Tools:
  *   jules_new / jules_list          — Async coding agent
@@ -20,9 +20,9 @@
  *   qwen_batch                      — Parallel multi-prompt across farm
  *   n8n_trigger                     — Workflow engine
  *   orchestrate                     — Full pipeline
- *   pe_configure                    — Configure PE engine (model presets / custom e, C_ψ)
+ *   pe_configure                    — Configure Perfect Balance engine (legacy tool id)
  *   pe_step                         — Record a reasoning step + audit
- *   pe_status                       — Get current PE session status + history
+ *   pe_status                       — Get current Perfect Balance status + history
  *   dual_umpire_audit               — Parallel cross-vendor audit (Gemini 3 Flash + Copilot GPT-5 mini)
  */
 
@@ -103,7 +103,7 @@ async function getHealthyCoderPorts(limit = QWEN_CODER_PORTS.length): Promise<nu
   return checks.filter((port): port is number => port !== null).slice(0, limit);
 }
 
-// ── Perfect Equilibrium Engine v2.1 (Hardened) ─────────────────────────────
+// ── Perfect Balance Engine v2.1 (Hardened) ─────────────────────────────────
 // 完全平衡体: Hallucination を制御対象の状態量として追跡する数理モデル
 // P_hall(t+1) = (1 - C_ψ_eff) × (P_hall(t) + (1 - P_hall(t)) × e)
 // P_limit    = ((1 - C_ψ_eff) × e) / (1 - (1 - C_ψ_eff) × (1 - e))
@@ -144,7 +144,7 @@ interface PEStepRecord {
   timestamp: string;
 }
 
-export class PerfectEquilibriumEngine {
+export class PerfectBalanceEngine {
   private e: number;
   private c_psi_base: number;           // nominal C_ψ (from preset)
   private p_hall: number = 0.0;
@@ -386,7 +386,7 @@ export class PerfectEquilibriumEngine {
       this.karma = Math.max(0.1, this.karma * 0.8);
       return {
         success: false,
-        message: `🚫 DENIED: Caller '${caller}' is not authorized to reset PE engine. `
+          message: `🚫 DENIED: Caller '${caller}' is not authorized to reset the Perfect Balance engine. `
           + `Authorized callers: ${[...PE_RESET_ALLOWED_CALLERS].join(', ')}. `
           + `This attempt has been logged as a sabotage event (karma: ${this.karma.toFixed(4)}).`,
       };
@@ -406,7 +406,7 @@ export class PerfectEquilibriumEngine {
     // NOTE: karma and sabotage_events are NEVER reset — persistent reputation
     return {
       success: true,
-      message: `✅ PE Engine reset by '${caller}'. Karma preserved at ${this.karma.toFixed(4)}.`,
+      message: `✅ Perfect Balance reset by '${caller}'. Karma preserved at ${this.karma.toFixed(4)}.`,
     };
   }
 
@@ -442,9 +442,9 @@ export class PerfectEquilibriumEngine {
       this.vortex_watch_dir = resolved;
       this.vortex_watcher = fsWatch(resolved, { recursive: true }, (_event, filename) => {
         if (!filename) return;
-        if (PerfectEquilibriumEngine.VORTEX_IGNORE.some(p => p.test(filename))) return;
+        if (PerfectBalanceEngine.VORTEX_IGNORE.some(p => p.test(filename))) return;
         const ext = extname(filename);
-        if (ext && !PerfectEquilibriumEngine.VORTEX_CODE_EXTS.has(ext)) return;
+        if (ext && !PerfectBalanceEngine.VORTEX_CODE_EXTS.has(ext)) return;
         this.engageLock(filename);
       });
       return { success: true, message: `🔒 VORTEX ARMED: Watching ${resolved} for file mutations` };
@@ -463,8 +463,10 @@ export class PerfectEquilibriumEngine {
   }
 }
 
-// Global PE engine instance (one per MCP server session)
-let peEngine = new PerfectEquilibriumEngine('claude_sonnet');
+export const PerfectEquilibriumEngine = PerfectBalanceEngine;
+
+// Global PB engine instance (one per MCP server session)
+let peEngine = new PerfectBalanceEngine('claude_sonnet');
 
 // ── OpenAI-compatible chat helper ───────────────────────────────────────────
 
@@ -1019,11 +1021,11 @@ server.tool(
   },
 );
 
-// ── Perfect Equilibrium MCP Tools (v2.1 Hardened) ───────────────────────────
+// ── Perfect Balance MCP Tools (v2.1 Hardened) ───────────────────────────────
 
 server.tool(
   'pe_configure',
-  'Configure the Perfect Equilibrium engine. Set model preset or custom error rate / correction power. Reset requires authorized caller.',
+  'Configure the Perfect Balance engine (legacy tool id: pe_configure). Set model preset or custom error rate / correction power. Reset requires authorized caller.',
   {
     preset: z.enum(['claude_opus', 'claude_sonnet', 'gemini_pro', 'gemini_flash', 'qwen3_coder', 'qwen35_9b'])
       .optional().describe('Model preset (sets e and C_ψ automatically)'),
@@ -1037,7 +1039,7 @@ server.tool(
     if (preset) {
       // Preserve karma across preset changes
       const oldStatus = peEngine.getStatus();
-      peEngine = new PerfectEquilibriumEngine(preset, context_decay ?? 0);
+      peEngine = new PerfectBalanceEngine(preset, context_decay ?? 0);
       // Re-apply karma from previous session
       if (oldStatus.karma < 1.0) {
         peEngine.configure(undefined, undefined, undefined);
@@ -1057,7 +1059,7 @@ server.tool(
       content: [{
         type: 'text',
         text: [
-          `✅ PE Engine v2.1 configured`,
+          `✅ Perfect Balance v2.1 configured`,
           `Model: ${status.model}`,
           `e = ${status.e_base} | C_ψ_base = ${status.c_psi_base} | C_ψ_eff = ${status.c_psi_effective}`,
           `P_limit = ${status.p_limit} | Karma = ${status.karma}`,
@@ -1072,7 +1074,7 @@ server.tool(
 
 server.tool(
   'pe_step',
-  'Record reasoning step(s) in the PE engine. Supports weighted multi-step and complexity-adjusted C_ψ.',
+  'Record reasoning step(s) in the Perfect Balance engine (legacy tool id: pe_step). Supports weighted multi-step and complexity-adjusted C_ψ.',
   {
     audit_result: z.enum(['PASS', 'FAIL']).optional()
       .describe('Result of Vector Proxy / manual audit for this step. FAIL boosts P_hall.'),
@@ -1135,7 +1137,7 @@ server.tool(
 
 server.tool(
   'pe_status',
-  'Get the current PE session status. Shows P_hall, P_limit, karma, sabotage tracking, and recent history.',
+  'Get the current Perfect Balance session status (legacy tool id: pe_status). Shows P_hall, P_limit, karma, sabotage tracking, and recent history.',
   {},
   async () => {
     const s = peEngine.getStatus();
@@ -1143,7 +1145,7 @@ server.tool(
       STABLE: '🟢', COLLAPSED: '🔴', IDLE: '⚪', EVOLVING: '🟡', SABOTAGE_DETECTED: '🚨',
     }[s.status] ?? '⬜';
     const lines = [
-      `## ${emoji} Perfect Equilibrium Status (v2.1 Hardened)`,
+      `## ${emoji} Perfect Balance Status (v2.1 Hardened)`,
       ``,
       `| Parameter | Value |`,
       `|-----------|-------|`,
@@ -1375,7 +1377,7 @@ server.tool(
 
 server.tool(
   'dual_umpire_audit',
-  'Run parallel cross-vendor code audit using DeepSeek VORTEX Critic + Copilot CLI. Returns independent verdicts from both umpires for PE external verification layer.',
+  'Run parallel cross-vendor code audit using DeepSeek VORTEX Critic + Copilot CLI. Returns independent verdicts from both umpires for the Perfect Balance external verification layer.',
   {
     code: z.string().describe('Code diff or code snippet to audit'),
     context: z.string().optional().describe('Optional context about what the code should do'),

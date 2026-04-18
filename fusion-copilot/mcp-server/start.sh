@@ -18,8 +18,15 @@ if [ ! -d "node_modules" ]; then
   npm install
 fi
 
-# ビルドがなければビルド
+# ビルドがない、または source/package が dist より新しければビルド
+needs_build=false
 if [ ! -f "dist/index.js" ]; then
+  needs_build=true
+elif find src package.json package-lock.json tsconfig.json vitest.config.ts -type f -newer dist/index.js 2>/dev/null | grep -q .; then
+  needs_build=true
+fi
+
+if [ "$needs_build" = true ]; then
   echo "🔨 Building..." >&2
   npm run build
 fi

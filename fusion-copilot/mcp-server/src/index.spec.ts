@@ -5,7 +5,7 @@
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import * as fs from 'fs';
-import { PerfectEquilibriumEngine, resolveRepoContext } from './index.js';
+import { PerfectBalanceEngine, resolveRepoContext } from './index.js';
 
 vi.mock('fs', async () => {
 	const actual = await vi.importActual<typeof import('fs')>('fs');
@@ -39,11 +39,11 @@ describe('resolveRepoContext', () => {
 	});
 });
 
-describe('PerfectEquilibriumEngine', () => {
-	let engine: PerfectEquilibriumEngine;
+describe('PerfectBalanceEngine', () => {
+	let engine: PerfectBalanceEngine;
 
 	beforeEach(() => {
-		engine = new PerfectEquilibriumEngine('claude_sonnet');
+		engine = new PerfectBalanceEngine('claude_sonnet');
 	});
 
 	describe('Initialization and Configuration', () => {
@@ -153,13 +153,13 @@ describe('PerfectEquilibriumEngine', () => {
 
 		it('should produce lower P_hall with strong VP than without', () => {
 			// 10 steps without VP
-			const noVP = new PerfectEquilibriumEngine('gemini_pro');
+			const noVP = new PerfectBalanceEngine('gemini_pro');
 			for (let i = 0; i < 10; i++) {
 				noVP.recordStep('PASS', 1, 2);
 			}
 
 			// 10 steps with strong VP
-			const withVP = new PerfectEquilibriumEngine('gemini_pro');
+			const withVP = new PerfectBalanceEngine('gemini_pro');
 			const vp = { l0: 0.95, l1: 0.88, l2: 0.72, l3: 0.6, l4: 0.85 };
 			for (let i = 0; i < 10; i++) {
 				withVP.recordStep('PASS', 1, 2, vp);
@@ -176,7 +176,7 @@ describe('PerfectEquilibriumEngine', () => {
 			const record = engine.recordStep('PASS', 1, 0, layer_scores);
 
 			// Clean engine for comparison
-			const clean = new PerfectEquilibriumEngine('claude_sonnet');
+			const clean = new PerfectBalanceEngine('claude_sonnet');
 			const cleanRecord = clean.recordStep('PASS', 1, 0, layer_scores);
 
 			expect(record.c_psi_effective).toBeLessThan(cleanRecord.c_psi_effective);

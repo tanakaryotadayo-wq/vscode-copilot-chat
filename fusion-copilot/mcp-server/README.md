@@ -1,12 +1,12 @@
 # 🚀 Fusion Orchestrator v2 MCP Server
 
-**Antigravity IDE × Jules × ACP×CLI×PCC × PE × n8n を統合する、独立型MCPサーバー**
+**Antigravity IDE × Jules × ACP×CLI×PCC × Perfect Balance × n8n を統合する、独立型MCPサーバー**
 
 ---
 
 ## これは何？
 
-Fusion Copilot の全オーケストレーション機能（Jules 非同期コーディング、ACP×CLI×PCC による Gemini / Claude / Copilot 批判的実行、Perfect Equilibrium、n8n ワークフロー実行、Qwen ローカルAIファーム）を、
+Fusion Copilot の全オーケストレーション機能（Jules 非同期コーディング、ACP×CLI×PCC による Gemini / Claude / Copilot 批判的実行、Perfect Balance、n8n ワークフロー実行、Qwen ローカルAIファーム）を、
 **MCP（Model Context Protocol）準拠の独立サーバー**として公開するものです。
 
 これにより、**Antigravity IDE・Claude Desktop・その他任意のMCP対応AIクライアント**から、
@@ -58,9 +58,9 @@ npm test
 | `n8n_trigger` | n8n Webhookを叩いてJules監査ループを発動 | `repo`, `task` |
 | `qwen_health` | Qwen 3.5 ファーム（8010-8014）の死活チェック | — |
 | `orchestrate` | GitHub Issue分析 → タスク分解 → Jules並列投入の全自動パイプライン | — |
-| `pe_configure` | Perfect Equilibrium の preset / e / C_ψ を設定 | — |
-| `pe_step` | 推論ステップを記録し、動的 C_ψ と sabotage を評価 | — |
-| `pe_status` | PE の現在状態と履歴を確認 | — |
+| `pe_configure` | Perfect Balance の preset / e / C_ψ を設定（legacy tool id） | — |
+| `pe_step` | 推論ステップを記録し、動的 C_ψ と sabotage を評価（legacy tool id） | — |
+| `pe_status` | Perfect Balance の現在状態と履歴を確認（legacy tool id） | — |
 | `dual_umpire_audit` | DeepSeek VORTEX Critic + Copilot の二重審判監査 | `code` |
 
 ## 🧠 ACP×CLI×PCC の実運用
